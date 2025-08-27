@@ -94,6 +94,10 @@ module.exports = NodeHelper.create({
           .then(function(bundle) {
             if (!bundle) return;
             var mapped = self.mapTessieToModuleFields(bundle.state, bundle.location);
+            // Preserve last known geofence if location not fetched or empty
+            if ((!mapped.geofence || mapped.geofence === '') && self.lastMappedValues && self.lastMappedValues.geofence) {
+                mapped.geofence = self.lastMappedValues.geofence;
+            }
             var shouldSend = false;
             try {
                 if (!self.lastMappedValues) shouldSend = true;
@@ -272,9 +276,11 @@ module.exports = NodeHelper.create({
         var pluggedIn = false;
         if (chg) {
             var cable = chg.conn_charge_cable;
-            if (cable && cable !== '<invalid>') pluggedIn = true;
-            if (chg.charge_port_latch === 'Engaged') pluggedIn = true;
-            if (chg.charge_port_door_open === true) pluggedIn = true;
+            var chargingState = (typeof chg.charging_state === 'string') ? chg.charging_state.toLowerCase() : '';
+            var cablePresent = (cable && cable !== '<invalid>');
+            var notDisconnected = (chargingState && chargingState !== 'disconnected');
+            pluggedIn = !!(cablePresent && notDisconnected);
+            // Note: we no longer infer plugged status from latch or port door alone to avoid false positives
         }
 
         var updating = veh && veh.software_update && veh.software_update.status && (veh.software_update.status.trim() !== '');
