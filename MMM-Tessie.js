@@ -74,6 +74,7 @@ Module.register("MMM-Tessie", {
     const hasTessieCreds = (this.config.tessie && this.config.tessie.accessToken && this.config.tessie.vin);
     if (!hasTessieCreds) {
       console.log(this.name + ': Tessie credentials missing; set config.tessie.accessToken and config.tessie.vin');
+      this.missingCreds = true;
       return;
     }
     this.openTessieConnection();
@@ -123,6 +124,12 @@ Module.register("MMM-Tessie", {
 
   getDom: function () {
     console.log(this.name + ": getDom called");
+    if (this.missingCreds || !(this.config.tessie && this.config.tessie.accessToken && this.config.tessie.vin)) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'loading';
+      wrapper.innerHTML = 'Configure tessie.accessToken and tessie.vin in module config';
+      return wrapper;
+    }
     const kmToMiFixed = function (miles, fixed) {
       return (miles / 1.609344).toFixed(fixed);
     };
