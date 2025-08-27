@@ -18,6 +18,15 @@ Module.register("MMM-Tessie", {
       accessToken: null,
       vin: null,
     },
+    displayMode: 'graphic', // 'graphic' | 'map'
+    mapOptions: {
+      enabled: false, // if true or displayMode === 'map', backend fetches map image
+      width: 300,
+      height: 300,
+      zoom: 16,
+      markerSize: 50,
+      style: 'dark'
+    },
     rangeDisplay: "%",
     imperial: false,
     sizeOptions: {
@@ -64,7 +73,7 @@ Module.register("MMM-Tessie", {
       'odometer','ideal_range','est_range','rated_range',
       'battery','battery_usable','plugged_in','charge_added','charge_limit','charge_start','charge_time',
       'update_available','geofence','tpms_pressure_fl','tpms_pressure_fr','tpms_pressure_rl','tpms_pressure_rr',
-      'image_model','image_options'
+      'image_model','image_options','map_image'
     ];
 
     this.subscriptions = {};
@@ -221,8 +230,11 @@ Module.register("MMM-Tessie", {
     }
 
     console.log(this.name + ": Generating DOM with data: ", data);
-    //always graphic mode
-    this.generateGraphicDom(wrapper, data);
+    if ((this.config.displayMode && this.config.displayMode.toLowerCase() === 'map') || (this.config.mapOptions && this.config.mapOptions.enabled)) {
+      this.generateMapDom(wrapper, data);
+    } else {
+      this.generateGraphicDom(wrapper, data);
+    }
 
     //optionally append the table
     if (this.config.hybridView)
@@ -523,5 +535,105 @@ Module.register("MMM-Tessie", {
         </div>
       </div>
 		`;
+  },
+
+  generateMapDom: function (wrapper, data) {
+    console.log(this.name + ": generateMapDom called with data: ", data);
+
+    const {
+      carName, state, battery, batteryUsable, chargeLimitSOC,
+      isClimateOn, isPreconditioning, pluggedIn, locked, sentry, windowsOpen, doorsOpen, trunkOpen, frunkOpen, isUserPresent,
+      isHealthy, isUpdateAvailable, idealRange, outside_temp, inside_temp, geofence, tpms_pressure_fl, tpms_pressure_fr, tpms_pressure_rl, tpms_pressure_rr
+    } = data;
+
+    const layWidth = this.config.sizeOptions?.width ?? 450;
+    const layHeight = this.config.sizeOptions?.height ?? 203;
+    const topOffset = this.config.sizeOptions?.topOffset ?? -40;
+
+    const teslaModel = this.config.carImageOptions?.model ?? this.subscriptions["image_model"]?.value ?? "m3";
+    const teslaView = this.config.carImageOptions?.view ?? "STUD_3QTR";
+    const teslaOptions = this.config.carImageOptions?.options ?? this.subscriptions["image_options"]?.value ?? "PPSW,W32B,SLR1";
+    const teslaImageWidth = 720;
+    const teslaImageUrl = `https://static-assets.tesla.com/v1/compositor/?model=${teslaModel}&view=${teslaView}&size=${teslaImageWidth}&options=${teslaOptions}&bkba_opt=1`;
+    const imageOpacity = this.config.carImageOptions?.imageOpacity ?? 0.4;
+
+    const mapImg = this.subscriptions["map_image"]?.value;
+
+    const batteryUnit = this.config.rangeDisplay === "%" ? "%" : (this.config.imperial ? "mi" : "km");
+    const batteryBigNumber = this.config.rangeDisplay === "%" ? batteryUsable : idealRange;
+
+    const stateIcons = [];
+    if (state == "asleep" || state == "suspended") stateIcons.push("power-sleep");
+    if (state == "suspended") stateIcons.push("timer-sand");
+    if (pluggedIn == "true") stateIcons.push("power-plug");
+    if (locked == "false") stateIcons.push("lock-open-variant");
+    if (sentry == "true") stateIcons.push("cctv");
+    if (windowsOpen == "true") stateIcons.push("window-open");
+    if (isUserPresent == "true") stateIcons.push("account");
+    if (doorsOpen == "true" || trunkOpen == "true" || frunkOpen == "true") stateIcons.push("car-door");
+    if (isClimateOn == "true" || isPreconditioning == "true") stateIcons.push("air-conditioner");
+
+    const networkIcons = [];
+    if (state == "updating") networkIcons.push("cog-clockwise");
+    else if (isUpdateAvailable == "true") networkIcons.push("gift");
+    if (isHealthy != "true") networkIcons.push("alert-box");
+    networkIcons.push((state == "offline") ? "signal-off" : "signal");
+
+    const renderedStateIcons = stateIcons.map((icon) => `<span class="mdi mdi-${icon}"></span>`)
+    const renderedNetworkIcons = networkIcons.map((icon) => `<span class="mdi mdi-${icon}" ${icon == "alert-box" ? "style='color: #f66'" : ""}></span>`)
+
+    const layBatWidth = this.config.sizeOptions?.batWidth ?? 250;
+    const layBatHeight = this.config.sizeOptions?.batHeight ?? 75;
+    const layBatTopMargin = this.config.displayOptions?.batteryBar?.topMargin ?? 0;
+    const layBatScaleWidth = layBatWidth / 250;
+    const layBatScaleHeight = layBatHeight / 75;
+    const batteryReserveVisible = (battery - batteryUsable) > 1;
+    const innerWidthPx = (layBatWidth - 12);
+    const innerHeightPx = (layBatHeight - 12);
+    const usableWidthPx = Math.round(innerWidthPx * (Math.max(0, Math.min(100, batteryUsable)) / 100));
+    const reservePct = Math.max(0, (battery - batteryUsable));
+    const reserveWidthPx = Math.round(innerWidthPx * (reservePct / 100));
+    const limitLeftPx = Math.round(innerWidthPx * (Math.max(0, Math.min(100, chargeLimitSOC)) / 100));
+    const levelClass = (batteryUsable <= 20) ? 'battery--low' : (batteryUsable <= 50 ? 'battery--medium' : 'battery--high');
+
+    const batteryOverlayIcon = (pluggedIn && (this.subscriptions["charge_time"].value > 0.0)) ? `<span class="mdi mdi-flash bright light"></span>` : (batteryReserveVisible ? `<span class=\"mdi mdi-snowflake bright light\"></span>` : '');
+
+    const batteryHtml = `
+      <div class=\"battery ios26 ${levelClass}\"
+           style=\"margin-top: ${layBatTopMargin}px; width: ${layBatWidth}px; height: ${layBatHeight}px;\">
+        <div class=\"battery-body\">
+          <div class=\"battery-inner\" style=\"width: ${innerWidthPx}px; height: ${innerHeightPx}px;\">
+            <div class=\"battery-fill\" style=\"width: ${usableWidthPx}px; height: ${innerHeightPx}px;\"></div>
+            <div class=\"battery-reserve\" style=\"left: ${usableWidthPx}px; width: ${reserveWidthPx}px; height: ${innerHeightPx}px; ${batteryReserveVisible ? '' : 'visibility: hidden;'}\"></div>
+            <div class=\"battery-limit\" style=\"left: ${limitLeftPx}px; height: ${innerHeightPx}px; ${chargeLimitSOC === 0 ? 'visibility: hidden;' : ''}\"></div>
+            <div class=\"battery-overlay medium\">${batteryOverlayIcon}</div>
+          </div>
+        </div>
+        <div class=\"battery-terminal\"></div>
+      </div>`;
+
+    const carWidth = Math.round(layWidth * 0.35);
+    const carImageCss = `background-image: url('${teslaImageUrl}'); background-size: ${carWidth}px; background-repeat: no-repeat; background-position: left center; opacity: ${imageOpacity}; width: ${carWidth}px; height: ${Math.round(layHeight * 0.8)}px;`;
+
+    const mapSide = Math.min(this.config.mapOptions?.width ?? 300, this.config.mapOptions?.height ?? 300);
+    const mapHtml = mapImg ? `<img class=\"map-rounded\" src=\"${mapImg}\" style=\"width: ${mapSide}px; height: ${mapSide}px;\"/>` : '';
+
+    wrapper.innerHTML = `
+      <div class=\"map-mode\" style=\"width: ${layWidth}px;\"> 
+        <link href=\"https://cdn.materialdesignicons.com/4.8.95/css/materialdesignicons.min.css\" rel=\"stylesheet\" type=\"text/css\"> 
+        <div class=\"row top\" style=\"display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-top: ${topOffset}px;\">
+          <div class=\"left\" style=\"flex: 1; min-width: 0;\">
+            <div class=\"icons\" style=\"display:flex; gap: 6px; align-items:center; margin-bottom: 8px;\">${renderedStateIcons.join(' ')} ${renderedNetworkIcons.join(' ')} </div>
+            <div class=\"car-and-battery\" style=\"display:flex; gap: 12px; align-items:center;\">
+              <div class=\"car\" style=\"${carImageCss}\"></div>
+              <div class=\"battery-row\" style=\"display:flex; flex-direction: column;\">
+                <div class=\"percent\"><span class=\"bright large light\">${batteryBigNumber}</span><span class=\"normal medium\">${batteryUnit}</span></div>
+                ${batteryHtml}
+              </div>
+            </div>
+          </div>
+          <div class=\"right\" style=\"flex: 0 0 auto;\">${mapHtml}</div>
+        </div>
+      </div>`;
   }
 });
