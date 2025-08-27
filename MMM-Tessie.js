@@ -63,7 +63,8 @@ Module.register("MMM-Tessie", {
       'outside_temp','inside_temp','climate_on','preconditioning',
       'odometer','ideal_range','est_range','rated_range',
       'battery','battery_usable','plugged_in','charge_added','charge_limit','charge_start','charge_time',
-      'update_available','geofence','tpms_pressure_fl','tpms_pressure_fr','tpms_pressure_rl','tpms_pressure_rr'
+      'update_available','geofence','tpms_pressure_fl','tpms_pressure_fr','tpms_pressure_rl','tpms_pressure_rr',
+      'image_model','image_options'
     ];
 
     this.subscriptions = {};
@@ -407,9 +408,9 @@ Module.register("MMM-Tessie", {
     var layScaleWidth = layWidth / 450;        // scale factor normalized to 450
     var layScaleHeight = layHeight / 203;      // scale factor normalized to 203
 
-    const teslaModel = this.config.carImageOptions?.model ?? this.subscriptions["image_model"].value ?? "m3";
+    const teslaModel = this.config.carImageOptions?.model ?? this.subscriptions["image_model"]?.value ?? "m3";
     const teslaView = this.config.carImageOptions?.view ?? "STUD_3QTR";
-    const teslaOptions = this.config.carImageOptions?.options ?? this.subscriptions["image_options"].value ?? "PPSW,W32B,SLR1";
+    const teslaOptions = this.config.carImageOptions?.options ?? this.subscriptions["image_options"]?.value ?? "PPSW,W32B,SLR1";
 
     const teslaImageWidth = 720; // Tesla compositor stopped returning arbitrary-sized images, only steps of 250, 400, 720 etc work now. We use CSS to scale the image to the correct layout width
     const teslaImageUrl = `https://static-assets.tesla.com/v1/compositor/?model=${teslaModel}&view=${teslaView}&size=${teslaImageWidth}&options=${teslaOptions}&bkba_opt=1`;
