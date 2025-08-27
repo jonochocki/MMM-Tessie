@@ -1,4 +1,4 @@
-Module.register("MMM-Teslamate", {
+Module.register("MMM-Tessie", {
 
   getScripts: function () {
     console.log(this.name + ": getScripts called");
@@ -8,21 +8,18 @@ Module.register("MMM-Teslamate", {
     console.log(this.name + ": getStyles called");
     return [
       'https://cdnjs.cloudflare.com/ajax/libs/material-design-iconic-font/2.2.0/css/material-design-iconic-font.min.css',
-      'Teslamate.css',
+      'Tessie.css',
     ];
   },
 
   // Default module config
   defaults: {
-    dataSource: 'teslamate',
     tessie: {
       accessToken: null,
       vin: null,
     },
-    mqttServer: {},
     rangeDisplay: "%",
     imperial: false,
-    carID: '1',
     sizeOptions: {
       width: 450,
       height: 203,
@@ -57,107 +54,29 @@ Module.register("MMM-Teslamate", {
     updatePeriod: 10, // update period in seconds (default increased to 10)
   },
 
-  makeServerKey: function (server) {
-    console.log(this.name + ": makeServerKey called with server: ", server);
-    return '' + server.address + ':' + (server.port ?? '1883');
-  },
-
   start: function () {
     console.log(this.name + ": start called");
-    const topicPrefix = 'teslamate/cars/' + this.config.carID;
+    const keys = [
+      'name','state','health',
+      'lat','lon','shift_state','speed',
+      'locked','sentry','windows','doors','trunk','frunk','user',
+      'outside_temp','inside_temp','climate_on','preconditioning',
+      'odometer','ideal_range','est_range','rated_range',
+      'battery','battery_usable','plugged_in','charge_added','charge_limit','charge_start','charge_time',
+      'update_available','geofence','tpms_pressure_fl','tpms_pressure_fr','tpms_pressure_rl','tpms_pressure_rr'
+    ];
 
-    const Topics = {
-      name: topicPrefix + '/display_name',
-      state: topicPrefix + '/state',
-      health: topicPrefix + '/healthy',
-
-      lat: topicPrefix + '/latitude',
-      lon: topicPrefix + '/longitude',
-      shift_state: topicPrefix + '/shift_state',
-      speed: topicPrefix + '/speed',
-
-      locked: topicPrefix + '/locked',
-      sentry: topicPrefix + '/sentry_mode',
-      windows: topicPrefix + '/windows_open',
-      doors: topicPrefix + '/doors_open',
-      trunk: topicPrefix + '/trunk_open',
-      frunk: topicPrefix + '/frunk_open',
-      user: topicPrefix + '/is_user_present',
-
-      outside_temp: topicPrefix + '/outside_temp',
-      inside_temp: topicPrefix + '/inside_temp',
-      climate_on: topicPrefix + '/is_climate_on',
-      preconditioning: topicPrefix + '/is_preconditioning',
-
-      odometer: topicPrefix + '/odometer',
-      ideal_range: topicPrefix + '/ideal_battery_range_km',
-      est_range: topicPrefix + '/est_battery_range_km',
-      rated_range: topicPrefix + '/rated_battery_range_km',
-
-      battery: topicPrefix + '/battery_level',
-      battery_usable: topicPrefix + '/usable_battery_level',
-      plugged_in: topicPrefix + '/plugged_in',
-      charge_added: topicPrefix + '/charge_energy_added',
-      charge_limit: topicPrefix + '/charge_limit_soc',
-      charge_start: topicPrefix + '/scheduled_charging_start_time',
-      charge_time: topicPrefix + '/time_to_full_charge',
-
-      update_available: topicPrefix + '/update_available',
-      geofence: topicPrefix + '/geofence',
-      tpms_pressure_fl: topicPrefix + '/tpms_pressure_fl',
-      tpms_pressure_fr: topicPrefix + '/tpms_pressure_fr',
-      tpms_pressure_rl: topicPrefix + '/tpms_pressure_rl',
-      tpms_pressure_rr: topicPrefix + '/tpms_pressure_rr',
-    };
-
-    console.log(this.name + ": Topics initialized");
-    this.subscriptions = {
-      lat: {},
-      lon: {},
-    };
+    this.subscriptions = {};
+    for (let i = 0; i < keys.length; i++) {
+      this.subscriptions[keys[i]] = { value: null, time: null };
+    }
 
     const hasTessieCreds = (this.config.tessie && this.config.tessie.accessToken && this.config.tessie.vin);
-    if (this.config.dataSource === 'tessie' && hasTessieCreds) {
-      console.log(this.name + ': Setting up Tessie data source (token+vin present)');
-      for (let key in Topics) {
-        this.subscriptions[key] = {
-          topic: null,
-          serverKey: null,
-          value: null,
-          time: null
-        };
-      }
-      console.log(this.name + ": Subscriptions initialized (Tessie)");
-      this.openTessieConnection();
-    } else {
-      if (this.config.dataSource === 'tessie' && !hasTessieCreds) {
-        console.log(this.name + ': Tessie selected but missing accessToken or vin; falling back to MQTT');
-      }
-      console.log(this.name + ': Setting up connection to server');
-
-      var s = this.config.mqttServer;
-      var serverKey = this.makeServerKey(s);
-      console.log(this.name + ': Adding config for ' + s.address + ' port ' + s.port + ' user ' + s.user);
-
-      for (let key in Topics) {
-        var topic = Topics[key];
-        console.log(this.name + ': Subscribing to topic: ' + topic);
-        this.subscriptions[key] = {
-          topic: topic,
-          serverKey: serverKey,
-          value: null,
-          time: null
-        };
-      }
-
-      console.log(this.name + ": Subscriptions initialized");
-      this.openMqttConnection();
+    if (!hasTessieCreds) {
+      console.log(this.name + ': Tessie credentials missing; set config.tessie.accessToken and config.tessie.vin');
+      return;
     }
-  },
-
-  openMqttConnection: function () {
-    console.log(this.name + ": openMqttConnection called");
-    this.sendSocketNotification('MQTT_CONFIG', this.config);
+    this.openTessieConnection();
   },
 
   openTessieConnection: function () {
@@ -167,26 +86,7 @@ Module.register("MMM-Teslamate", {
 
   socketNotificationReceived: function (notification, payload) {
     console.log(this.name + ": socketNotificationReceived - Notification: " + notification);
-    if (notification === 'MQTT_PAYLOAD') {
-      if (payload != null) {
-        console.log(this.name + ": MQTT_PAYLOAD received for serverKey: " + payload.serverKey + " and topic: " + payload.topic);
-        for (let key in this.subscriptions) {
-          let sub = this.subscriptions[key];
-          if (sub.serverKey == payload.serverKey && sub.topic == payload.topic) {
-            var value = payload.value;
-            sub.value = value;
-            sub.time = payload.time;
-
-            console.log(this.name + ": Updated subscription for key: " + key + " with value: " + value);
-
-            this.subscriptions[key] = sub;
-          }
-        }
-        this.triggerDomUpdate();
-      } else {
-        console.log(this.name + ': MQTT_PAYLOAD - No payload');
-      }
-    } else if (notification === 'TESSIE_STATE') {
+    if (notification === 'TESSIE_STATE') {
       if (payload && payload.values) {
         console.log(this.name + ": TESSIE_STATE received");
         const now = Date.now();
@@ -500,9 +400,9 @@ Module.register("MMM-Teslamate", {
     var layScaleWidth = layWidth / 450;        // scale factor normalized to 450
     var layScaleHeight = layHeight / 203;      // scale factor normalized to 203
 
-    const teslaModel = this.config.carImageOptions?.model ?? "m3";
+    const teslaModel = this.config.carImageOptions?.model ?? this.subscriptions["image_model"].value ?? "m3";
     const teslaView = this.config.carImageOptions?.view ?? "STUD_3QTR";
-    const teslaOptions = this.config.carImageOptions?.options ?? "PPSW,W32B,SLR1";
+    const teslaOptions = this.config.carImageOptions?.options ?? this.subscriptions["image_options"].value ?? "PPSW,W32B,SLR1";
 
     const teslaImageWidth = 720; // Tesla compositor stopped returning arbitrary-sized images, only steps of 250, 400, 720 etc work now. We use CSS to scale the image to the correct layout width
     const teslaImageUrl = `https://static-assets.tesla.com/v1/compositor/?model=${teslaModel}&view=${teslaView}&size=${teslaImageWidth}&options=${teslaOptions}&bkba_opt=1`;

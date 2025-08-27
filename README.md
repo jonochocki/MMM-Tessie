@@ -1,52 +1,30 @@
-# MMM-Teslamate
-## Magic Mirror Module for the Teslamate utility
+# MMM-Tessie
+## MagicMirror module using the Tessie API
 
-## Graphic Mode
-![Teslamate_GraphicM3.png](doc/graphic_m3.png)
 
-Big thanks to [olexs](https://github.com/olexs) for this mode!
-
-## Hybrid Mode
-
-![Teslamate_ChargingM3.png](doc/charging.PNG)
-![Teslamate_ScheduledChargingM3.png](doc/charge_starting.PNG)
-
-Also many thanks to [adriankumpf](https://github.com/adriankumpf) for their incredible work on the [Teslamate](https://github.com/adriankumpf/teslamate) project,
-as well as [aduyng](https://github.com/aduyng) for their [TeslaStatus](https://github.com/aduyng/MMM-TeslaStatus) module used as a template!
 
 If you have any feedback or suggestions, feel free to submit a MR with a feature, or log an issue for a feature you'd like to see!
 
-I use this module and Teslamate daily, so new MQTT topics should be added fairly regularly, but file an issue if I happen to miss one...
+This module uses Tessie directly.
 
 ## Installation
 
-* Requires an active installation of [Teslamate](https://github.com/adriankumpf/teslamate), with the MQTT (mosquitto) publisher configured.
-
-Clone this repo into your MagicMirror modules directory using:
-
-```git clone https://github.com/denverquane/MMM-Teslamate.git```
-
-Then run `npm ci` inside the new cloned folder, and make sure to add the module to your MagicMirror config (config/config.js), using configuration similar to that in the Configuration section below.
+Clone this repo into your MagicMirror `modules` directory. No additional dependencies are required.
+Add the module to your MagicMirror config with Tessie credentials.
 
 ## Sample Configuration
 
 ```
 {
-    module: 'MMM-Teslamate',
+    module: 'MMM-Tessie',
     position: 'bottom_left',
     config: {
-        mqttServer: {
-            address: '192.168.1.8',  // Server address or IP address of the MQTT broker
-            port: 1883,              // Port number if other than default (1883)
-            //user: 'user',          // Leave out for no user
-            //password: 'password',  // Leave out for no password
+        tessie: {
+            accessToken: 'YOUR_TESSIE_ACCESS_TOKEN',
+            vin: 'YOUR_VIN_HERE'
         },
-
         rangeDisplay: "%", // "%" or "range"
         imperial: false, //use imperial units (true = Miles & F) or metric (false = Km & C)
-
-        carID: '1', // defaults to '1'; only override if you have multiple Teslas and want to display 
-                    // a specific car per instance of the module
 
         // set to true to enable both the graphic, and the additional stats 
         // (charge remaining, scheduled charge start, etc)
@@ -107,58 +85,20 @@ Then run `npm ci` inside the new cloned folder, and make sure to add the module 
 },
 ```
 
-## Tessie (alternative data source)
-
-This module can fetch vehicle data directly from the Tessie API instead of TeslaMate MQTT.
-
-Requirements:
-- A Tessie API access token
-- Your vehicle VIN
-
-Polling cadence:
-- Uses the same `updatePeriod` (in seconds) as the rendering throttle. Default is `5` seconds.
+## Tessie API
 
 Endpoints used:
 - `GET /{vin}/state?use_cache=true` for comprehensive vehicle state
 - `GET /{vin}/location` for `saved_location`/`address` (used as geofence name)
 
-Sample configuration (Tessie):
-
-```
-{
-    module: 'MMM-Teslamate',
-    position: 'bottom_left',
-    config: {
-        dataSource: 'tessie',
-        tessie: {
-            accessToken: 'YOUR_TESSIE_ACCESS_TOKEN',
-            vin: 'YOUR_VIN_HERE'
-        },
-        // Optional: keep for MQTT if you also run another instance with TeslaMate
-        mqttServer: {
-            address: '192.168.1.8',
-            port: 1883
-        },
-        rangeDisplay: "%", // "%" or "range"
-        imperial: false,
-        hybridView: true,
-        updatePeriod: 5
-    }
-}
-```
-
-Notes:
-- When `dataSource` is set to `tessie`, MQTT is not used. Values are normalized to the same internal keys as with TeslaMate.
-- For location name, the module prefers Tessie `saved_location` and falls back to `address`.
-
 ## Notes
 * Some fields (charge added, time to full charge) are currently only enabled if the vehicle is plugged in
 
 ## Ongoing work
-* Display Teslamate "status" topic
+* Additional Tessie endpoints
 * Add support to selectively enable/disable certain lines
 * ~~Allow display for multiple Teslas~~
 * ~~Add images of module~~
 * ~~Selectively enable/disable certain fields based on other state (for example, still show scheduled charge time if plugged in)~~
-* ~~Format and display Teslamate "scheduled charge time" topic~~
+* ~~Format and display scheduled charge time~~
 * ~~Proper Imperial/Metric conversion and formatting~~

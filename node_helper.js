@@ -1,156 +1,23 @@
-var mqtt = require('mqtt');
 var NodeHelper = require("node_helper");
 var https = require('https');
-const topicPrefix = 'teslamate/cars/';
-
-var globalServer = {};
 
 module.exports = NodeHelper.create({
     tessieConfig: null,
     tessieTimer: null,
 
-    makeTopics: function (carID) {
-      return {
-        name: topicPrefix + carID + '/display_name',
-        state: topicPrefix + carID + '/state',
-        health: topicPrefix + carID + '/healthy',
-
-        lat: topicPrefix + carID + '/latitude',
-        lon: topicPrefix + carID + '/longitude',
-        shift_state: topicPrefix + carID + '/shift_state',
-        speed: topicPrefix + carID + '/speed',
-
-        locked: topicPrefix + carID + '/locked',
-        sentry: topicPrefix + carID + '/sentry_mode',
-        windows: topicPrefix + carID + '/windows_open',
-
-        outside_temp: topicPrefix + carID + '/outside_temp',
-        inside_temp: topicPrefix + carID + '/inside_temp',
-        climate_on: topicPrefix + carID + '/is_climate_on',
-
-        odometer: topicPrefix + carID + '/odometer',
-        ideal_range: topicPrefix + carID + '/ideal_battery_range_km',
-        est_range: topicPrefix + carID + '/est_battery_range_km',
-        rated_range: topicPrefix + carID + '/rated_battery_range_km',
-
-        battery: topicPrefix + carID + '/battery_level',
-        battery_usable: topicPrefix + carID + '/usable_battery_level',
-        plugged_in: topicPrefix + carID + '/plugged_in',
-        charge_added: topicPrefix + carID + '/charge_energy_added',
-        charge_limit: topicPrefix + carID + '/charge_limit_soc',
-        // charge_port: 'teslamate/cars/1/charge_port_door_open',
-        // charge_current: 'teslamate/cars/1/charger_actual_current',
-        // charge_phases: 'teslamate/cars/1/charger_phases',
-        // charge_power: 'teslamate/cars/1/charger_power',
-        // charge_voltage: 'teslamate/cars/1/charger_voltage',
-        charge_start: topicPrefix + carID + '/scheduled_charging_start_time',
-        charge_time:  topicPrefix + carID + '/time_to_full_charge',
-
-        update_available: topicPrefix + carID + '/update_available',
-        geofence: topicPrefix + carID + '/geofence',
-        tpms_pressure_fl: topicPrefix + carID + '/tpms_pressure_fl',
-        tpms_pressure_fr: topicPrefix + carID + '/tpms_pressure_fr',
-        tpms_pressure_rl: topicPrefix + carID + '/tpms_pressure_rl',
-        tpms_pressure_rr: topicPrefix + carID + '/tpms_pressure_rr',
-      };
-    },
+    
 
     start: function () {
         console.log(this.name + ': Starting node helper');
         this.loaded = false;
     },
 
-    makeServerKey: function (server) {
-        return '' + server.address + ':' + (server.port ?? '1883');
-    },
-
-    addServer: function (server, carID) {
-        var Topics = this.makeTopics(carID);
-        console.log(this.name + ': Adding server: ', server);
-        var serverKey = this.makeServerKey(server);
-        var mqttServer = {}
-        if (globalServer.serverKey === serverKey) {
-            mqttServer = globalServer;
-        } else {
-            mqttServer.serverKey = serverKey;
-            mqttServer.address = server.address;
-            mqttServer.port = server.port;
-            mqttServer.options = {};
-            mqttServer.topics = [];
-            if (server.user) mqttServer.options.username = server.user;
-            if (server.password) mqttServer.options.password = server.password;
-        }
-
-        for (var key in Topics) {
-            console.log(Topics[key]);
-            mqttServer.topics.push(Topics[key]);
-        }
-
-        globalServer = mqttServer;
-        this.startClient(mqttServer);
-    },
-
-    addConfig: function (config) {
-        console.log('Adding config');
-        const hasTessieCreds = (config && config.tessie && config.tessie.accessToken && config.tessie.vin);
-        if (config.dataSource === 'tessie' && hasTessieCreds) {
-            this.startTessieClient(config);
-        } else {
-            if (config.dataSource === 'tessie' && !hasTessieCreds) {
-                console.log(this.name + ': Tessie selected but missing accessToken or vin; using MQTT');
-            }
-            this.addServer(config.mqttServer, config.carID);
-        }
-    },
-
-    startClient: function (server) {
-
-        console.log(this.name + ': Starting client for: ', server);
-
-        var self = this;
-
-        var mqttServer = (server.address.match(/^mqtts?:\/\//) ? '' : 'mqtt://') + server.address;
-        if (server.port) {
-            mqttServer = mqttServer + ':' + server.port
-        }
-        console.log(self.name + ': Connecting to ' + mqttServer);
-
-        server.client = mqtt.connect(mqttServer, server.options);
-
-        server.client.on('error', function (err) {
-            console.log(self.name + ' ' + server.serverKey + ': Error: ', err);
-        });
-
-        server.client.on('reconnect', function (err) {
-            server.value = 'reconnecting'; // Hmmm...
-            console.log(self.name + ': ' + server.serverKey + ' reconnecting, error was: ', err);
-        });
-
-        server.client.on('connect', function (connack) {
-            console.log(self.name + ' connected to ' + mqttServer);
-            console.log(self.name + ': subscribing to ' + server.topics);
-            server.client.subscribe(server.topics);
-        });
-
-        server.client.on('message', function (topic, payload) {
-            self.sendSocketNotification('MQTT_PAYLOAD', {
-                serverKey: server.serverKey,
-                topic: topic,
-                value: payload.toString(),
-                time: Date.now()
-            });
-        });
-
-    },
+    
 
     socketNotificationReceived: function (notification, payload) {
         console.log(this.name + ': Socket notification received: ', notification, ': ', payload);
         var self = this;
-        if (notification === 'MQTT_CONFIG') {
-            var config = payload;
-            self.addConfig(config);
-            self.loaded = true;
-        } else if (notification === 'TESSIE_CONFIG') {
+        if (notification === 'TESSIE_CONFIG') {
             var configT = payload;
             self.startTessieClient(configT);
             self.loaded = true;
@@ -246,11 +113,98 @@ module.exports = NodeHelper.create({
         function mphToKmh(mph) { return (typeof mph === 'number') ? mph * 1.609344 : 0; }
         function milesToKm(mi) { return (typeof mi === 'number') ? mi * 1.609344 : 0; }
         function secToISO(sec) { return (typeof sec === 'number' && sec > 0) ? new Date(sec * 1000).toISOString() : ''; }
+        function mapCarTypeToModelCode(carType) {
+            if (!carType || typeof carType !== 'string') return null;
+            var ct = carType.toLowerCase();
+            if (ct.indexOf('model3') >= 0 || ct === 'model3') return 'm3';
+            if (ct.indexOf('models') >= 0 || ct === 'models' || ct === 'models2' || ct === 'modelsx') return 'ms';
+            if (ct.indexOf('modelx') >= 0 || ct === 'modelx') return 'mx';
+            if (ct.indexOf('modely') >= 0 || ct === 'modely') return 'my';
+            return null;
+        }
+        function mapExteriorColorToCode(color) {
+            if (!color || typeof color !== 'string') return null;
+            switch (color) {
+                case 'PearlWhite':
+                case 'PearlWhiteMultiCoat':
+                    return 'PPSW';
+                case 'RedMulticoat':
+                case 'RedMultiCoat':
+                    return 'PPMR';
+                case 'DeepBlueMetallic':
+                case 'DeepBlue':
+                    return 'PPSB';
+                case 'MidnightSilverMetallic':
+                case 'MidnightSilver':
+                    return 'PMNG';
+                case 'SolidBlack':
+                case 'ObsidianBlackMetallic':
+                    return 'PBSB';
+                case 'SilverMetallic':
+                    return 'PMSS';
+                default:
+                    return null;
+            }
+        }
+        function mapWheelTypeToCode(carTypeCode, wheelType, trimBadging) {
+            if (!wheelType || typeof wheelType !== 'string') return '';
+            var wt = wheelType;
+            var trim = (typeof trimBadging === 'string') ? trimBadging.toLowerCase() : '';
+
+            // Performance-specific overrides
+            if (carTypeCode === 'm3' && trim === 'p74d') return 'W33D';
+            if (carTypeCode === 'my' && trim === 'p74d') return 'WY21P';
+
+            switch (wt) {
+                // Model 3 common
+                case 'Pinwheel18': return 'W38B';
+                case 'Pinwheel18CapKit':
+                case 'PinwheelRefresh18': return 'W40B';
+                case 'Aero19': return 'WTAE';
+                case 'Sportwheel19':
+                case 'Stiletto19': return 'W39B';
+                case 'Aero18':
+                case 'StilettoRefresh19': return 'W41B';
+                case 'Performancewheel20':
+                case 'Stiletto20DarkSquare':
+                case 'Stiletto20': return 'W32P';
+                case 'Cardenio19': return 'WS90';
+
+                // S/X legacy mapping (subset)
+                case 'Slipstream19Silver': return 'WTAS';
+                case 'Slipstream19Carbon': return 'WTDS';
+                case 'Slipstream20Carbon': return 'WTSC';
+                case 'Slipstream20Silver': return 'WT20';
+                case 'AeroTurbine19': return 'WTAS';
+                case 'AeroTurbine20': return 'WT20';
+                case 'Turbine19': return 'WTTB';
+                case 'Arachnid21Grey': return 'WTAB';
+                case 'AeroTurbine22': return 'WT22';
+                case 'Turbine22Dark': return 'WTUT';
+                case 'Turbine22Light': return 'WT22';
+
+                // Model Y
+                case 'Gemini19':
+                case 'Apollo19': return 'WY19B';
+                case 'Induction20Black': return 'WY20P';
+                case 'UberTurbine21Black': return 'WY21P';
+            }
+
+            // Fallback heuristics
+            if (wt.indexOf('Slipstream19') >= 0) return 'WTAS';
+            if (wt.indexOf('Turbine22') >= 0) return 'WTUT';
+            if (wt.indexOf('UberTurbine20') >= 0) return 'W33D';
+            if (wt.indexOf('Base19') >= 0) return 'WT19';
+            if (wt.indexOf('Stiletto20') >= 0) return 'W32P';
+            if (wt.indexOf('Cyberstream') >= 0) return 'WX00';
+            return '';
+        }
 
         var drive = ls && ls.drive_state ? ls.drive_state : {};
         var veh = ls && ls.vehicle_state ? ls.vehicle_state : {};
         var clim = ls && ls.climate_state ? ls.climate_state : {};
         var chg = ls && ls.charge_state ? ls.charge_state : {};
+        var vconf = ls && ls.vehicle_config ? ls.vehicle_config : {};
 
         var windowsOpen = (veh.fd_window || veh.fp_window || veh.rd_window || veh.rp_window) ? true : false;
         var doorsOpen = (veh.df || veh.dr || veh.pf || veh.pr) ? true : false;
@@ -276,6 +230,16 @@ module.exports = NodeHelper.create({
         }
 
         var timeHrs = (typeof chg.minutes_to_full_charge === 'number' && chg.minutes_to_full_charge > 0) ? (chg.minutes_to_full_charge / 60.0) : (typeof chg.time_to_full_charge === 'number' ? chg.time_to_full_charge : 0);
+
+        var imageModel = mapCarTypeToModelCode(vconf.car_type);
+        var imageOptionCodes = [];
+        var paintCode = mapExteriorColorToCode(vconf.exterior_color);
+        if (paintCode) imageOptionCodes.push(paintCode);
+        if (vconf && typeof vconf.spoiler_type === 'string' && vconf.spoiler_type !== 'None' && vconf.spoiler_type !== '') {
+            imageOptionCodes.push('SLR1');
+        }
+        var wheelCode = mapWheelTypeToCode(imageModel, vconf.wheel_type, vconf.trim_badging);
+        if (wheelCode) imageOptionCodes.push(wheelCode);
 
         return {
             name: (ls.display_name || veh.vehicle_name || ''),
@@ -319,7 +283,11 @@ module.exports = NodeHelper.create({
             tpms_pressure_fl: (typeof veh.tpms_pressure_fl === 'number' ? veh.tpms_pressure_fl : 0),
             tpms_pressure_fr: (typeof veh.tpms_pressure_fr === 'number' ? veh.tpms_pressure_fr : 0),
             tpms_pressure_rl: (typeof veh.tpms_pressure_rl === 'number' ? veh.tpms_pressure_rl : 0),
-            tpms_pressure_rr: (typeof veh.tpms_pressure_rr === 'number' ? veh.tpms_pressure_rr : 0)
+            tpms_pressure_rr: (typeof veh.tpms_pressure_rr === 'number' ? veh.tpms_pressure_rr : 0),
+
+            // Image compositor helpers (used by frontend when carImageOptions not provided)
+            image_model: imageModel,
+            image_options: imageOptionCodes.join(',')
         };
     }
 });
