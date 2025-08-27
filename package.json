@@ -1,0 +1,12 @@
+{
+  "name": "MMM-Teslamate",
+  "version": "0.1.1",
+  "description": "Display Tesla information for MagicMirror via TeslaMate MQTT or Tessie API",
+  "author": "Denver Quane",
+  "contributors": [
+    "Jonathan Ochocki"
+  ],
+  "dependencies": {
+    "mqtt": "^4.3.7"
+  }
+}
