@@ -4,6 +4,11 @@ var https = require('https');
 module.exports = NodeHelper.create({
     tessieConfig: null,
     tessieTimer: null,
+    tessieBackoffMs: null,
+    lastMappedValues: null,
+    lastSentAt: 0,
+    pollCounter: 0,
+    pollConfig: null,
 
     
 
@@ -36,21 +41,35 @@ module.exports = NodeHelper.create({
             vin: config.tessie.vin,
             periodMs: (config.updatePeriod ? config.updatePeriod : 5) * 1000
         };
+        self.pollConfig = {
+            drivingMs: (config.pollingCadence && config.pollingCadence.drivingMs) ? config.pollingCadence.drivingMs : 5000,
+            onlineMs: (config.pollingCadence && config.pollingCadence.onlineMs) ? config.pollingCadence.onlineMs : 30000,
+            asleepMs: (config.pollingCadence && config.pollingCadence.asleepMs) ? config.pollingCadence.asleepMs : 300000,
+            errorBackoffMs: (config.pollingCadence && config.pollingCadence.errorBackoffMs) ? config.pollingCadence.errorBackoffMs : 60000,
+            locationEvery: (config.pollingCadence && config.pollingCadence.locationEvery) ? config.pollingCadence.locationEvery : 6
+        };
         if (self.tessieTimer) {
             clearInterval(self.tessieTimer);
             self.tessieTimer = null;
         }
-        // Initial poll then interval
+        // Initial poll then dynamically scheduled polls
+        self.pollCounter = 0;
+        self.tessieBackoffMs = null;
+        self.lastMappedValues = null;
+        self.lastSentAt = 0;
         self.pollTessie();
-        self.tessieTimer = setInterval(function() {
-            self.pollTessie();
-        }, self.tessieConfig.periodMs);
     },
 
     pollTessie: function() {
         var self = this;
         var cfg = self.tessieConfig;
         if (!cfg) return;
+
+        var includeLocation = false;
+        if (self.pollConfig && typeof self.pollConfig.locationEvery === 'number') {
+            includeLocation = (self.pollCounter % self.pollConfig.locationEvery) === 0;
+        }
+        self.pollCounter = (self.pollCounter + 1) % 1000000;
 
         // Prefer the state endpoint for full nested vehicle state
         self.tessieGet('/' + encodeURIComponent(cfg.vin) + '/state?use_cache=true', cfg.token)
@@ -61,22 +80,61 @@ module.exports = NodeHelper.create({
               return null;
             }
             if (!st) return null;
+            if (!includeLocation) {
+                return { state: st, location: null };
+            }
             return self.tessieGet('/' + encodeURIComponent(cfg.vin) + '/location', cfg.token)
-              .then(function(locRes) {
-                var location = null;
-                try { location = JSON.parse(locRes); } catch (e) {}
-                return { state: st, location: location };
-              })
-              .catch(function() { return { state: st, location: null }; });
+                .then(function(locRes) {
+                    var location = null;
+                    try { location = JSON.parse(locRes); } catch (e) {}
+                    return { state: st, location: location };
+                })
+                .catch(function() { return { state: st, location: null }; });
           })
           .then(function(bundle) {
             if (!bundle) return;
             var mapped = self.mapTessieToModuleFields(bundle.state, bundle.location);
-            self.sendSocketNotification('TESSIE_STATE', { values: mapped });
+            var shouldSend = false;
+            try {
+                if (!self.lastMappedValues) shouldSend = true;
+                else shouldSend = (JSON.stringify(self.lastMappedValues) !== JSON.stringify(mapped));
+            } catch (e) {
+                shouldSend = true;
+            }
+            if (shouldSend) {
+                self.lastMappedValues = mapped;
+                self.lastSentAt = Date.now();
+                self.sendSocketNotification('TESSIE_STATE', { values: mapped });
+            }
+
+            // compute next delay
+            var nextMs = self.pollConfig ? self.pollConfig.onlineMs : cfg.periodMs;
+            if (mapped && typeof mapped.state === 'string') {
+                if (mapped.state === 'driving') nextMs = self.pollConfig.drivingMs;
+                else if (mapped.state === 'asleep' || mapped.state === 'offline') nextMs = self.pollConfig.asleepMs;
+                else nextMs = self.pollConfig.onlineMs;
+            }
+            // jitter +/-10%
+            var jitter = (Math.random() * 0.2) - 0.1;
+            nextMs = Math.max(1000, Math.floor(nextMs * (1 + jitter)));
+            self.scheduleNextPoll(nextMs);
+            self.tessieBackoffMs = null;
           })
           .catch(function(err) {
             console.log(self.name + ': Tessie poll error: ', err);
+            var base = (self.pollConfig && self.pollConfig.errorBackoffMs) ? self.pollConfig.errorBackoffMs : 60000;
+            self.tessieBackoffMs = self.tessieBackoffMs ? Math.min(self.tessieBackoffMs * 2, base * 10) : base;
+            self.scheduleNextPoll(self.tessieBackoffMs);
           });
+    },
+
+    scheduleNextPoll: function(delayMs) {
+        var self = this;
+        if (self.tessieTimer) {
+            clearTimeout(self.tessieTimer);
+            self.tessieTimer = null;
+        }
+        self.tessieTimer = setTimeout(function() { self.pollTessie(); }, delayMs);
     },
 
     tessieGet: function(path, token) {
