@@ -441,79 +441,30 @@ Module.register("MMM-Tessie", {
 
     let batteryBarHtml = '';
     if (this.config.displayOptions?.batteryBar?.visible ?? true) {
+      const innerWidthPx = (layBatWidth - 12);
+      const innerHeightPx = (layBatHeight - 12);
+      const usableWidthPx = Math.round(innerWidthPx * (Math.max(0, Math.min(100, batteryUsable)) / 100));
+      const reservePct = Math.max(0, (battery - batteryUsable));
+      const reserveWidthPx = Math.round(innerWidthPx * (reservePct / 100));
+      const limitLeftPx = Math.round(innerWidthPx * (Math.max(0, Math.min(100, chargeLimitSOC)) / 100));
+
+      // iOS-style color thresholds
+      const levelClass = (batteryUsable <= 20) ? 'battery--low' : (batteryUsable <= 50 ? 'battery--medium' : 'battery--high');
+
       batteryBarHtml = `
-        <!-- Battery graphic - outer border -->
-        <div style="margin-left: ${(layWidth - layBatWidth) / 2}px;
-                    width: ${layBatWidth}px; height: ${layBatHeight}px;
+        <div class="battery ios26 ${levelClass}"
+             style="margin-left: ${(layWidth - layBatWidth) / 2}px;
                     margin-top: ${layBatTopMargin}px;
-                    border: 2px solid #aaa;
-                    border-radius: ${10 * layBatScaleHeight}px">
-          <!-- Plus pole -->
-          <div style="position: relative; top: ${(layBatHeight - layBatHeight / 4) / 2 - 1}px; left: ${layBatWidth}px;
-                      width: ${8 * layBatScaleWidth}px; height: ${layBatHeight / 4}px;
-                      border: 2px solid #aaa;
-                      border-top-right-radius: ${5 * layBatScaleHeight}px;
-                      border-bottom-right-radius: ${5 * layBatScaleHeight}px;
-                      border-left: none;
-                      background: #000">
-              <div style="width: ${8 * layBatScaleWidth}px; height: ${layBatHeight / 4}px;
-                          opacity: ${imageOpacity};
-                          background-image: url('${teslaImageUrl}');
-                          background-size: ${imageWidth}px;
-                          background-position: -351px ${imageOffset - 152}px"></div>
-          </div>
-
-          <!-- Inner border -->
-          <div style="position: relative; 
-                      top: -${23 * layBatScaleHeight}px; 
-                      left: 0px;
-                        margin-left: 5px;
-                            margin-top: ${5 * layBatScaleHeight}px;
-                      width: ${(layBatWidth - 12)}px; height: ${layBatHeight - 8 - 2 - 2}px;
-                      border: 1px solid #aaa;
-                      border-radius: ${3 * layBatScaleHeight}px">
-
-            <!-- Green charge rectangle -->
-            <div style="position: relative; top: 0px; left: 0px; z-index: 2;
-                        width: ${Math.round(layBatScaleWidth * 2.38 * batteryUsable)}px;
-                        height: ${layBatHeight - 8 - 2 - 2}px;
-                        opacity: 0.8;
-                        border-top-left-radius: ${2.5 * layBatScaleHeight}px;
-                        border-bottom-left-radius: ${2.5 * layBatScaleHeight}px;
-                        background-color: #068A00"></div>
-
-            <!-- Blue reserved charge rectangle -->
-            <div style="position: relative; 
-                        top: -${layBatHeight - 8 - 2 - 2}px; 
-                        left: ${Math.round(layBatScaleWidth * 2.38 * batteryUsable)}px; 
-                        z-index: 2;
-                        width: ${Math.round(layBatScaleWidth * 2.38 * (battery - batteryUsable))}px;
-                        visibility: ${batteryReserveVisible ? 'visible' : 'hidden'};
-                        height: ${layBatHeight - 8 - 2 - 2}px;
-                        opacity: 0.8;
-                        border-top-left-radius: 2.5px;
-                        border-bottom-left-radius: 2.5px;
-                        background-color: #366aa5"></div>
-
-            <!-- Charge limit marker -->
-            <div style="position: relative; 
-                        top: -${(layBatHeight - 8 - 2 - 2) * 2}px; 
-                        left: ${Math.round(layBatScaleWidth * 2.38 * chargeLimitSOC) - 1}px;
-                        height: ${layBatHeight - 8 - 2 - 2}px; width: 2px;
-                        ${chargeLimitSOC === 0 ? "visibility: hidden" : ""}
-                        border-left: 1px dashed #888"></div>
-
-            <!-- Battery overlay icon (charging or snowflake) -->
-            <div class="medium"
-                 style="position: relative; 
-                        top: -${(layBatHeight - 8 * layBatScaleHeight - 2 - 2) * 2 + 56 * layBatScaleHeight}px; 
-                        left: 0; 
-                        text-align: center; 
-                        z-index: 5">
-              ${batteryOverlayIcon}
+                    width: ${layBatWidth}px; height: ${layBatHeight}px;">
+          <div class="battery-body">
+            <div class="battery-inner" style="width: ${innerWidthPx}px; height: ${innerHeightPx}px;">
+              <div class="battery-fill" style="width: ${usableWidthPx}px; height: ${innerHeightPx}px;"></div>
+              <div class="battery-reserve" style="left: ${usableWidthPx}px; width: ${reserveWidthPx}px; height: ${innerHeightPx}px; ${batteryReserveVisible ? '' : 'visibility: hidden;'}"></div>
+              <div class="battery-limit" style="left: ${limitLeftPx}px; height: ${innerHeightPx}px; ${chargeLimitSOC === 0 ? 'visibility: hidden;' : ''}"></div>
+              <div class="battery-overlay medium">${batteryOverlayIcon}</div>
             </div>
-
           </div>
+          <div class="battery-terminal"></div>
         </div>
       `;
     }
