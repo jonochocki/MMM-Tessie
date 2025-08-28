@@ -613,21 +613,20 @@ Module.register("MMM-Tessie", {
       </div>`;
 
     const carBgWidth = Math.round(layWidth * 0.4);
-    const carBgHeight = Math.round(layHeight * 0.8);
 
     const mapSide = Math.min(this.config.mapOptions?.width ?? 200, this.config.mapOptions?.height ?? 200);
-    const mapHtml = mapImg ? `<div class=\"map-rounded-wrap\" style=\"width:${mapSide}px; height:${mapSide}px;\"><img class=\"map-rounded\" src=\"${mapImg}\" style=\"width: 100%; height: 100%; object-fit: cover;\"/></div>` : '';
+    const mapHtml = mapImg ? `<img class=\"map-rounded\" src=\"${mapImg}\" style=\"width: ${mapSide}px; height: ${mapSide}px;\"/>` : '';
 
     wrapper.innerHTML = `
       <div class=\"map-mode\" style=\"width: ${layWidth}px;\"> 
         <link href=\"https://cdn.materialdesignicons.com/4.8.95/css/materialdesignicons.min.css\" rel=\"stylesheet\" type=\"text/css\"> 
         <div class=\"row top\" style=\"display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-top: ${topOffset}px;\">
-          <div class=\"left\" style=\"flex: 1; min-width: 0; position: relative;\">
+          <div class=\"left\" style=\"flex: 1; min-width: 0; position: relative; height: ${mapSide}px;\">
             <div class=\"car-bg\" style=\"position:absolute; inset:0; width:${carBgWidth}px; background-image:url('${teslaImageUrl}'); background-size: ${carBgWidth}px auto; background-repeat:no-repeat; background-position:left center; opacity:${imageOpacity};\"></div>
-            <div class=\"left-content\" style=\"position: relative; z-index: 2; display:flex; flex-direction: column; justify-content: flex-end; min-height: ${carBgHeight}px;\">
-              <div class=\"icons\" style=\"display:flex; gap: 6px; align-items:center; margin-bottom: 8px;\">${renderedStateIcons.join(' ')} ${renderedNetworkIcons.join(' ')} </div>
-              <div class=\"battery-row\" style=\"display:flex; flex-direction: row; align-items: flex-end; gap: 8px;\">
-                <div class=\"percent\" style=\"margin-bottom: 2px;\"><span class=\"bright medium light\">${batteryBigNumber}</span><span class=\"normal small\">${batteryUnit}</span></div>
+            <div class=\"left-content\" style=\"position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; justify-content: space-between;\">
+              <div class=\"icons\" style=\"display:flex; gap: 6px; align-items:center;\">${renderedStateIcons.join(' ')} ${renderedNetworkIcons.join(' ')} </div>
+              <div class=\"battery-row\" style=\"display:flex; flex-direction: column; align-items: flex-start;\">
+                <div class=\"percent\" style=\"margin-bottom: 4px;\"><span class=\"bright medium light\">${batteryBigNumber}</span><span class=\"normal small\">${batteryUnit}</span></div>
                 ${batteryHtml}
               </div>
             </div>
