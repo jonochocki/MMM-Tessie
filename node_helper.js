@@ -43,8 +43,8 @@ module.exports = NodeHelper.create({
         };
         self.mapOptions = {
             enabled: (config.displayMode === 'map') || (config.mapOptions && config.mapOptions.enabled === true),
-            width: (config.mapOptions && config.mapOptions.width) ? config.mapOptions.width : 300,
-            height: (config.mapOptions && config.mapOptions.height) ? config.mapOptions.height : 300,
+            width: (config.mapOptions && config.mapOptions.width) ? config.mapOptions.width : 200,
+            height: (config.mapOptions && config.mapOptions.height) ? config.mapOptions.height : 200,
             zoom: (config.mapOptions && config.mapOptions.zoom) ? config.mapOptions.zoom : 16,
             marker_size: (config.mapOptions && config.mapOptions.markerSize) ? config.mapOptions.markerSize : 50,
             style: (config.mapOptions && config.mapOptions.style) ? config.mapOptions.style : 'dark'
