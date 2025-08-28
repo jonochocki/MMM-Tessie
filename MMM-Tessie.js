@@ -18,7 +18,7 @@ Module.register("MMM-Tessie", {
       accessToken: null,
       vin: null,
     },
-    displayMode: 'graphic', // 'graphic' | 'map'
+    displayMode: 'graphic', // 'graphic' | 'map' | 'radial'
     mapOptions: {
       enabled: false, // if true or displayMode === 'map', backend fetches map image
       width: 200,
@@ -26,6 +26,12 @@ Module.register("MMM-Tessie", {
       zoom: 16,
       markerSize: 50,
       style: 'dark'
+    },
+    radialOptions: {
+      showCar: true, // overlay car at bottom of circle
+      ringThickness: 8, // px
+      iconBandThickness: 18, // px
+      gapDegrees: 6 // small gap to simulate complication spacing
     },
     rangeDisplay: "%",
     imperial: false,
@@ -232,6 +238,8 @@ Module.register("MMM-Tessie", {
     console.log(this.name + ": Generating DOM with data: ", data);
     if ((this.config.displayMode && this.config.displayMode.toLowerCase() === 'map') || (this.config.mapOptions && this.config.mapOptions.enabled)) {
       this.generateMapDom(wrapper, data);
+    } else if (this.config.displayMode && this.config.displayMode.toLowerCase() === 'radial') {
+      this.generateRadialDom(wrapper, data);
     } else {
       this.generateGraphicDom(wrapper, data);
     }
@@ -632,6 +640,63 @@ Module.register("MMM-Tessie", {
             </div>
           </div>
           <div class=\"right\" style=\"flex: 0 0 auto;\">${mapHtml}</div>
+        </div>
+      </div>`;
+  }
+  ,
+
+  generateRadialDom: function (wrapper, data) {
+    console.log(this.name + ": generateRadialDom called with data: ", data);
+
+    const { state, batteryUsable, idealRange, isHealthy, isUpdateAvailable, pluggedIn } = data;
+
+    const side = Math.min(this.config.mapOptions?.width ?? 200, this.config.mapOptions?.height ?? 200);
+    const radius = side / 2;
+    const ringThickness = this.config.radialOptions?.ringThickness ?? 8;
+    const iconBandThickness = this.config.radialOptions?.iconBandThickness ?? 18;
+    const gapDegrees = this.config.radialOptions?.gapDegrees ?? 6;
+    const mapImg = this.subscriptions["map_image"]?.value;
+
+    const teslaModel = this.config.carImageOptions?.model ?? this.subscriptions["image_model"]?.value ?? "m3";
+    const teslaView = this.config.carImageOptions?.view ?? "STUD_3QTR";
+    const teslaOptions = this.config.carImageOptions?.options ?? this.subscriptions["image_options"]?.value ?? "PPSW,W32B,SLR1";
+    const teslaImageWidth = 720;
+    const teslaImageUrl = `https://static-assets.tesla.com/v1/compositor/?model=${teslaModel}&view=${teslaView}&size=${teslaImageWidth}&options=${teslaOptions}&bkba_opt=1`;
+
+    const showCar = this.config.radialOptions?.showCar !== false;
+
+    const batteryPct = Math.max(0, Math.min(100, (this.config.rangeDisplay === '%' ? batteryUsable : idealRange)));
+    const circumference = 2 * Math.PI * (radius - ringThickness / 2);
+    const dash = (batteryPct / 100) * (circumference * (360 - gapDegrees) / 360);
+    const gap = circumference - dash;
+
+    const levelClass = (batteryUsable <= 20) ? 'battery--low' : (batteryUsable <= 50 ? 'battery--medium' : 'battery--high');
+
+    const icons = [];
+    if (pluggedIn == "true") icons.push("power-plug");
+    if (isUpdateAvailable == "true") icons.push("gift");
+    if (isHealthy != "true") icons.push("alert-box");
+    icons.push((state == "offline") ? "signal-off" : "signal");
+    const renderedIcons = icons.map((icon) => `<span class=\"mdi mdi-${icon}\"></span>`).join(' ');
+
+    wrapper.innerHTML = `
+      <div class=\"radial-mode\" style=\"width:${side}px;\">
+        <link href=\"https://cdn.materialdesignicons.com/4.8.95/css/materialdesignicons.min.css\" rel=\"stylesheet\" type=\"text/css\"> 
+        <div class=\"radial-wrap\" style=\"position: relative; width:${side}px; height:${side}px;\">
+          ${mapImg ? `<img class=\"map-rounded\" src=\"${mapImg}\" style=\"width:${side}px; height:${side}px; border-radius:9999px; object-fit: cover;\"/>` : ''}
+          <svg class=\"radial-ring ${levelClass}\" width=\"${side}\" height=\"${side}\" viewBox=\"0 0 ${side} ${side}\" style=\"position:absolute; top:0; left:0\">
+            <circle class=\"radial-bg\" cx=\"${radius}\" cy=\"${radius}\" r=\"${radius - ringThickness / 2}\" stroke-width=\"${ringThickness}\" fill=\"none\" />
+            <circle class=\"radial-fg\" cx=\"${radius}\" cy=\"${radius}\" r=\"${radius - ringThickness / 2}\" stroke-width=\"${ringThickness}\" fill=\"none\" stroke-dasharray=\"${dash} ${gap}\" transform=\"rotate(-90 ${radius} ${radius})\" stroke-linecap=\"round\" />
+          </svg>
+          ${showCar ? `<div class=\"car-overlay\" style=\"position:absolute; left:0; right:0; bottom:-6px; display:flex; justify-content:center;\">
+            <div style=\"background-image:url('${teslaImageUrl}'); background-repeat:no-repeat; background-position:center bottom; background-size:${Math.round(side * 0.7)}px auto; width:${Math.round(side * 0.8)}px; height:${Math.round(side * 0.45)}px; opacity:0.7;\"></div>
+          </div>` : ''}
+          <div class=\"icon-band\" style=\"position:absolute; inset:0; pointer-events:none;\">
+            <svg width=\"${side}\" height=\"${side}\" viewBox=\"0 0 ${side} ${side}\">
+              <path class=\"icon-band-bg\" d=\"M ${radius} ${radius - (radius - ringThickness - iconBandThickness)} a ${radius - ringThickness - iconBandThickness} ${radius - ringThickness - iconBandThickness} 0 1 1 0 ${2*(radius - ringThickness - iconBandThickness)} a ${radius - ringThickness - iconBandThickness} ${radius - ringThickness - iconBandThickness} 0 1 1 0 -${2*(radius - ringThickness - iconBandThickness)}\" />
+            </svg>
+            <div class=\"icons\" style=\"position:absolute; top:6px; left:50%; transform: translateX(-50%); background: rgba(255,255,255,0.12); border-radius: 9999px; padding: 4px 8px;\">${renderedIcons}</div>
+          </div>
         </div>
       </div>`;
   }
