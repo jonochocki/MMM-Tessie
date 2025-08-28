@@ -642,19 +642,23 @@ Module.register("MMM-Tessie", {
           <div class=\"right\" style=\"flex: 0 0 auto;\">${mapHtml}</div>
         </div>
       </div>`;
-  }
-  ,
+  },
 
   generateRadialDom: function (wrapper, data) {
     console.log(this.name + ": generateRadialDom called with data: ", data);
 
-    const { state, batteryUsable, idealRange, isHealthy, isUpdateAvailable, pluggedIn } = data;
+    const {
+      state, battery, batteryUsable, chargeLimitSOC, pluggedIn, locked, sentry, windowsOpen, doorsOpen, trunkOpen, frunkOpen,
+      isUserPresent, isClimateOn, isPreconditioning, isHealthy, isUpdateAvailable, idealRange
+    } = data;
 
     const side = Math.min(this.config.mapOptions?.width ?? 200, this.config.mapOptions?.height ?? 200);
     const radius = side / 2;
     const ringThickness = this.config.radialOptions?.ringThickness ?? 8;
     const iconBandThickness = this.config.radialOptions?.iconBandThickness ?? 18;
     const gapDegrees = this.config.radialOptions?.gapDegrees ?? 6;
+    const showCar = this.config.radialOptions?.showCar !== false;
+
     const mapImg = this.subscriptions["map_image"]?.value;
 
     const teslaModel = this.config.carImageOptions?.model ?? this.subscriptions["image_model"]?.value ?? "m3";
@@ -662,40 +666,55 @@ Module.register("MMM-Tessie", {
     const teslaOptions = this.config.carImageOptions?.options ?? this.subscriptions["image_options"]?.value ?? "PPSW,W32B,SLR1";
     const teslaImageWidth = 720;
     const teslaImageUrl = `https://static-assets.tesla.com/v1/compositor/?model=${teslaModel}&view=${teslaView}&size=${teslaImageWidth}&options=${teslaOptions}&bkba_opt=1`;
+    const imageOpacity = this.config.carImageOptions?.imageOpacity ?? 0.7;
 
-    const showCar = this.config.radialOptions?.showCar !== false;
-
+    // Battery progress calculation
     const batteryPct = Math.max(0, Math.min(100, (this.config.rangeDisplay === '%' ? batteryUsable : idealRange)));
     const circumference = 2 * Math.PI * (radius - ringThickness / 2);
-    const dash = (batteryPct / 100) * (circumference * (360 - gapDegrees) / 360);
-    const gap = circumference - dash;
+    const totalArc = circumference * (360 - gapDegrees) / 360;
+    const progressArc = (batteryPct / 100) * totalArc;
+    const remainingArc = totalArc - progressArc;
 
+    // Battery level styling
     const levelClass = (batteryUsable <= 20) ? 'battery--low' : (batteryUsable <= 50 ? 'battery--medium' : 'battery--high');
 
-    const icons = [];
-    if (pluggedIn == "true") icons.push("power-plug");
-    if (isUpdateAvailable == "true") icons.push("gift");
-    if (isHealthy != "true") icons.push("alert-box");
-    icons.push((state == "offline") ? "signal-off" : "signal");
-    const renderedIcons = icons.map((icon) => `<span class=\"mdi mdi-${icon}\"></span>`).join(' ');
+    // Icons for the curved band
+    const stateIcons = [];
+    if (state == "asleep" || state == "suspended") stateIcons.push("power-sleep");
+    if (pluggedIn == "true") stateIcons.push("power-plug");
+    if (locked == "false") stateIcons.push("lock-open-variant");
+    if (sentry == "true") stateIcons.push("cctv");
+    if (windowsOpen == "true") stateIcons.push("window-open");
+    if (isUserPresent == "true") stateIcons.push("account");
+    if (doorsOpen == "true" || trunkOpen == "true" || frunkOpen == "true") stateIcons.push("car-door");
+    if (isClimateOn == "true" || isPreconditioning == "true") stateIcons.push("air-conditioner");
+
+    const networkIcons = [];
+    if (state == "updating") networkIcons.push("cog-clockwise");
+    else if (isUpdateAvailable == "true") networkIcons.push("gift");
+    if (isHealthy != "true") networkIcons.push("alert-box");
+    networkIcons.push((state == "offline") ? "signal-off" : "signal");
+
+    const allIcons = [...stateIcons, ...networkIcons];
+    const renderedIcons = allIcons.map((icon) => `<span class="mdi mdi-${icon} ${icon == "alert-box" ? "alert" : ""}"></span>`).join(' ');
+
+    const carOverlay = showCar ? `
+      <div class="car-overlay" style="position:absolute; left:0; right:0; bottom:-6px; display:flex; justify-content:center; z-index:2;">
+        <div style="background-image:url('${teslaImageUrl}'); background-repeat:no-repeat; background-position:center bottom; background-size:${Math.round(side * 0.6)}px auto; width:${Math.round(side * 0.7)}px; height:${Math.round(side * 0.4)}px; opacity:${imageOpacity};"></div>
+      </div>` : '';
 
     wrapper.innerHTML = `
-      <div class=\"radial-mode\" style=\"width:${side}px;\">
-        <link href=\"https://cdn.materialdesignicons.com/4.8.95/css/materialdesignicons.min.css\" rel=\"stylesheet\" type=\"text/css\"> 
-        <div class=\"radial-wrap\" style=\"position: relative; width:${side}px; height:${side}px;\">
-          ${mapImg ? `<img class=\"map-rounded\" src=\"${mapImg}\" style=\"width:${side}px; height:${side}px; border-radius:9999px; object-fit: cover;\"/>` : ''}
-          <svg class=\"radial-ring ${levelClass}\" width=\"${side}\" height=\"${side}\" viewBox=\"0 0 ${side} ${side}\" style=\"position:absolute; top:0; left:0\">
-            <circle class=\"radial-bg\" cx=\"${radius}\" cy=\"${radius}\" r=\"${radius - ringThickness / 2}\" stroke-width=\"${ringThickness}\" fill=\"none\" />
-            <circle class=\"radial-fg\" cx=\"${radius}\" cy=\"${radius}\" r=\"${radius - ringThickness / 2}\" stroke-width=\"${ringThickness}\" fill=\"none\" stroke-dasharray=\"${dash} ${gap}\" transform=\"rotate(-90 ${radius} ${radius})\" stroke-linecap=\"round\" />
+      <div class="radial-mode" style="width:${side}px; position: relative;">
+        <link href="https://cdn.materialdesignicons.com/4.8.95/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
+        <div class="radial-wrap" style="position: relative; width:${side}px; height:${side}px;">
+          ${mapImg ? `<img class="map-center" src="${mapImg}" style="width:${side}px; height:${side}px; border-radius:50%; object-fit: cover; z-index:1; position: relative;"/>` : ''}
+          <svg class="radial-ring ${levelClass}" width="${side}" height="${side}" viewBox="0 0 ${side} ${side}" style="position:absolute; top:0; left:0; z-index:3;">
+            <circle class="radial-bg" cx="${radius}" cy="${radius}" r="${radius - ringThickness / 2}" stroke-width="${ringThickness}" fill="none" />
+            <circle class="radial-fg" cx="${radius}" cy="${radius}" r="${radius - ringThickness / 2}" stroke-width="${ringThickness}" fill="none" stroke-dasharray="${progressArc} ${remainingArc}" transform="rotate(-90 ${radius} ${radius})" stroke-linecap="round" />
           </svg>
-          ${showCar ? `<div class=\"car-overlay\" style=\"position:absolute; left:0; right:0; bottom:-6px; display:flex; justify-content:center;\">
-            <div style=\"background-image:url('${teslaImageUrl}'); background-repeat:no-repeat; background-position:center bottom; background-size:${Math.round(side * 0.7)}px auto; width:${Math.round(side * 0.8)}px; height:${Math.round(side * 0.45)}px; opacity:0.7;\"></div>
-          </div>` : ''}
-          <div class=\"icon-band\" style=\"position:absolute; inset:0; pointer-events:none;\">
-            <svg width=\"${side}\" height=\"${side}\" viewBox=\"0 0 ${side} ${side}\">
-              <path class=\"icon-band-bg\" d=\"M ${radius} ${radius - (radius - ringThickness - iconBandThickness)} a ${radius - ringThickness - iconBandThickness} ${radius - ringThickness - iconBandThickness} 0 1 1 0 ${2*(radius - ringThickness - iconBandThickness)} a ${radius - ringThickness - iconBandThickness} ${radius - ringThickness - iconBandThickness} 0 1 1 0 -${2*(radius - ringThickness - iconBandThickness)}\" />
-            </svg>
-            <div class=\"icons\" style=\"position:absolute; top:6px; left:50%; transform: translateX(-50%); background: rgba(255,255,255,0.12); border-radius: 9999px; padding: 4px 8px;\">${renderedIcons}</div>
+          ${carOverlay}
+          <div class="icon-band" style="position:absolute; top:6px; left:50%; transform: translateX(-50%); z-index:4;">
+            <div class="icons-group" style="background: rgba(255,255,255,0.15); backdrop-filter: blur(8px); border-radius: 12px; padding: 6px 10px; font-size: 12px;">${renderedIcons}</div>
           </div>
         </div>
       </div>`;
