@@ -29,7 +29,7 @@ Module.register("MMM-Tessie", {
     },
     radialOptions: {
       showCar: true, // overlay car at bottom of circle
-      showPercentage: true, // show battery percentage in center
+      showPercentage: true, // show battery percentage
       ringThickness: 8, // px
       iconBandThickness: 18, // px
       gapDegrees: 6 // small gap to simulate complication spacing
@@ -709,39 +709,44 @@ Module.register("MMM-Tessie", {
       </div>` : '';
 
     const percentageOverlay = showPercentage ? `
-      <div class="percentage-overlay" style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); z-index:5; text-align:center;">
-        <div class="percentage-text" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); border-radius: 8px; padding: 4px 8px;">
-          <span class="bright medium light">${batteryBigNumber}</span><span class="normal small">${batteryUnit}</span>
+      <div class="percentage-overlay" style="position:absolute; bottom:-20px; left:50%; transform:translateX(-50%); z-index:5; text-align:center;">
+        <div class="percentage-text" style="color: rgba(255,255,255,0.9); font-weight: 600;">
+          <div class="battery-number" style="font-size: 24px; line-height: 1;">${batteryBigNumber}</div>
+          <div class="battery-unit" style="font-size: 12px; opacity: 0.7; margin-top: -2px;">${batteryUnit}</div>
         </div>
       </div>` : '';
 
-    // Calculate curved icon positions
-    const iconRadius = radius - ringThickness - iconBandThickness;
+    // Calculate curved icon positions - positioned OUTSIDE the circle
+    const iconRadius = radius + ringThickness + 16; // Outside the circle
+    const containerCenter = (containerSize) / 2;
     const iconPositions = allIcons.map((icon, index) => {
-      const angleStep = 60 / Math.max(1, allIcons.length - 1); // 60 degree arc at top
-      const angle = -30 + (index * angleStep); // Start at -30deg, end at +30deg
+      const angleStep = 90 / Math.max(1, allIcons.length - 1); // 90 degree arc at top
+      const angle = -45 + (index * angleStep); // Start at -45deg, end at +45deg
       const radian = (angle * Math.PI) / 180;
-      const x = radius + iconRadius * Math.sin(radian);
-      const y = radius - iconRadius * Math.cos(radian);
+      const x = containerCenter + iconRadius * Math.sin(radian);
+      const y = containerCenter - iconRadius * Math.cos(radian);
       return { icon, x, y, angle };
     });
 
     const curvedIcons = iconPositions.map(({icon, x, y}) => 
-      `<div class="curved-icon" style="position:absolute; left:${x - 8}px; top:${y - 8}px; width:16px; height:16px; display:flex; align-items:center; justify-content:center;">
-        <span class="mdi mdi-${icon} ${icon == "alert-box" ? "alert" : ""}" style="font-size:12px;"></span>
+      `<div class="curved-icon" style="position:absolute; left:${x - 10}px; top:${y - 10}px; width:20px; height:20px; display:flex; align-items:center; justify-content:center;">
+        <span class="mdi mdi-${icon} ${icon == "alert-box" ? "alert" : ""}" style="font-size:14px;"></span>
       </div>`
     ).join('');
 
+    const containerSize = side + 60; // Extra space for icons and percentage
     wrapper.innerHTML = `
-      <div class="radial-mode" style="width:${side}px; position: relative;">
+      <div class="radial-mode" style="width:${containerSize}px; height:${containerSize + 40}px; position: relative; display: flex; justify-content: center; align-items: flex-start; padding-top: 30px;">
         <link href="https://cdn.materialdesignicons.com/4.8.95/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
-        <div class="radial-wrap" style="position: relative; width:${side}px; height:${side}px;">
-          ${mapImg ? `<img class="map-center" src="${mapImg}" style="width:${side}px; height:${side}px; border-radius:50%; object-fit: cover; z-index:1; position: relative;"/>` : `<div class="map-placeholder" style="width:${side}px; height:${side}px; border-radius:50%; background: rgba(100,100,100,0.3); z-index:1; position: relative;"></div>`}
-          <svg class="radial-ring ${levelClass}" width="${side}" height="${side}" viewBox="0 0 ${side} ${side}" style="position:absolute; top:0; left:0; z-index:3;">
-            <circle class="radial-bg" cx="${radius}" cy="${radius}" r="${radius - ringThickness / 2}" stroke-width="${ringThickness}" fill="none" />
-            <circle class="radial-fg" cx="${radius}" cy="${radius}" r="${radius - ringThickness / 2}" stroke-width="${ringThickness}" fill="none" stroke-dasharray="${progressArc} ${remainingArc}" transform="rotate(-90 ${radius} ${radius})" stroke-linecap="round" />
-          </svg>
-          ${carOverlay}
+        <div class="radial-wrap" style="position: relative; width:${containerSize}px; height:${containerSize}px;">
+          <div class="circle-container" style="position: absolute; top: 30px; left: 30px; width:${side}px; height:${side}px;">
+            ${mapImg ? `<img class="map-center" src="${mapImg}" style="width:${side}px; height:${side}px; border-radius:50%; object-fit: cover; z-index:1; position: relative;"/>` : `<div class="map-placeholder" style="width:${side}px; height:${side}px; border-radius:50%; background: rgba(100,100,100,0.3); z-index:1; position: relative;"></div>`}
+            <svg class="radial-ring ${levelClass}" width="${side}" height="${side}" viewBox="0 0 ${side} ${side}" style="position:absolute; top:0; left:0; z-index:3;">
+              <circle class="radial-bg" cx="${radius}" cy="${radius}" r="${radius - ringThickness / 2}" stroke-width="${ringThickness}" fill="none" />
+              <circle class="radial-fg" cx="${radius}" cy="${radius}" r="${radius - ringThickness / 2}" stroke-width="${ringThickness}" fill="none" stroke-dasharray="${progressArc} ${remainingArc}" transform="rotate(-90 ${radius} ${radius})" stroke-linecap="round" />
+            </svg>
+            ${carOverlay}
+          </div>
           ${percentageOverlay}
           <div class="icon-band" style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:4; pointer-events:none;">
             ${curvedIcons}

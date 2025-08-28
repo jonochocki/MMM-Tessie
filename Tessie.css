@@ -176,15 +176,16 @@
 }
 
 .radial-mode .curved-icon {
-  background: rgba(255,255,255,0.15);
-  backdrop-filter: blur(8px);
+  background: rgba(255,255,255,0.18);
+  backdrop-filter: blur(12px);
   border-radius: 50%;
-  border: 1px solid rgba(255,255,255,0.1);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  border: 1px solid rgba(255,255,255,0.2);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.3);
 }
 
 .radial-mode .curved-icon .mdi {
-  color: rgba(255,255,255,0.9);
+  color: rgba(255,255,255,0.95);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
 .radial-mode .curved-icon .mdi.alert {
@@ -192,8 +193,21 @@
 }
 
 .radial-mode .percentage-text {
-  border: 1px solid rgba(255,255,255,0.1);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+}
+
+.radial-mode .percentage-text .battery-number {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.radial-mode .percentage-text .battery-unit {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .radial-mode .map-placeholder {
