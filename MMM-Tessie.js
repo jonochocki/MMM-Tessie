@@ -29,6 +29,7 @@ Module.register("MMM-Tessie", {
     },
     radialOptions: {
       showCar: true, // overlay car at bottom of circle
+      showPercentage: true, // show battery percentage in center
       ringThickness: 8, // px
       iconBandThickness: 18, // px
       gapDegrees: 6 // small gap to simulate complication spacing
@@ -698,23 +699,52 @@ Module.register("MMM-Tessie", {
     const allIcons = [...stateIcons, ...networkIcons];
     const renderedIcons = allIcons.map((icon) => `<span class="mdi mdi-${icon} ${icon == "alert-box" ? "alert" : ""}"></span>`).join(' ');
 
+    const showPercentage = this.config.radialOptions?.showPercentage !== false;
+    const batteryUnit = this.config.rangeDisplay === "%" ? "%" : (this.config.imperial ? "mi" : "km");
+    const batteryBigNumber = this.config.rangeDisplay === "%" ? batteryUsable : idealRange;
+
     const carOverlay = showCar ? `
       <div class="car-overlay" style="position:absolute; left:0; right:0; bottom:-6px; display:flex; justify-content:center; z-index:2;">
         <div style="background-image:url('${teslaImageUrl}'); background-repeat:no-repeat; background-position:center bottom; background-size:${Math.round(side * 0.6)}px auto; width:${Math.round(side * 0.7)}px; height:${Math.round(side * 0.4)}px; opacity:${imageOpacity};"></div>
       </div>` : '';
 
+    const percentageOverlay = showPercentage ? `
+      <div class="percentage-overlay" style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); z-index:5; text-align:center;">
+        <div class="percentage-text" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); border-radius: 8px; padding: 4px 8px;">
+          <span class="bright medium light">${batteryBigNumber}</span><span class="normal small">${batteryUnit}</span>
+        </div>
+      </div>` : '';
+
+    // Calculate curved icon positions
+    const iconRadius = radius - ringThickness - iconBandThickness;
+    const iconPositions = allIcons.map((icon, index) => {
+      const angleStep = 60 / Math.max(1, allIcons.length - 1); // 60 degree arc at top
+      const angle = -30 + (index * angleStep); // Start at -30deg, end at +30deg
+      const radian = (angle * Math.PI) / 180;
+      const x = radius + iconRadius * Math.sin(radian);
+      const y = radius - iconRadius * Math.cos(radian);
+      return { icon, x, y, angle };
+    });
+
+    const curvedIcons = iconPositions.map(({icon, x, y}) => 
+      `<div class="curved-icon" style="position:absolute; left:${x - 8}px; top:${y - 8}px; width:16px; height:16px; display:flex; align-items:center; justify-content:center;">
+        <span class="mdi mdi-${icon} ${icon == "alert-box" ? "alert" : ""}" style="font-size:12px;"></span>
+      </div>`
+    ).join('');
+
     wrapper.innerHTML = `
       <div class="radial-mode" style="width:${side}px; position: relative;">
         <link href="https://cdn.materialdesignicons.com/4.8.95/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
         <div class="radial-wrap" style="position: relative; width:${side}px; height:${side}px;">
-          ${mapImg ? `<img class="map-center" src="${mapImg}" style="width:${side}px; height:${side}px; border-radius:50%; object-fit: cover; z-index:1; position: relative;"/>` : ''}
+          ${mapImg ? `<img class="map-center" src="${mapImg}" style="width:${side}px; height:${side}px; border-radius:50%; object-fit: cover; z-index:1; position: relative;"/>` : `<div class="map-placeholder" style="width:${side}px; height:${side}px; border-radius:50%; background: rgba(100,100,100,0.3); z-index:1; position: relative;"></div>`}
           <svg class="radial-ring ${levelClass}" width="${side}" height="${side}" viewBox="0 0 ${side} ${side}" style="position:absolute; top:0; left:0; z-index:3;">
             <circle class="radial-bg" cx="${radius}" cy="${radius}" r="${radius - ringThickness / 2}" stroke-width="${ringThickness}" fill="none" />
             <circle class="radial-fg" cx="${radius}" cy="${radius}" r="${radius - ringThickness / 2}" stroke-width="${ringThickness}" fill="none" stroke-dasharray="${progressArc} ${remainingArc}" transform="rotate(-90 ${radius} ${radius})" stroke-linecap="round" />
           </svg>
           ${carOverlay}
-          <div class="icon-band" style="position:absolute; top:6px; left:50%; transform: translateX(-50%); z-index:4;">
-            <div class="icons-group" style="background: rgba(255,255,255,0.15); backdrop-filter: blur(8px); border-radius: 12px; padding: 6px 10px; font-size: 12px;">${renderedIcons}</div>
+          ${percentageOverlay}
+          <div class="icon-band" style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:4; pointer-events:none;">
+            ${curvedIcons}
           </div>
         </div>
       </div>`;

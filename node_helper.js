@@ -42,7 +42,7 @@ module.exports = NodeHelper.create({
             periodMs: (config.updatePeriod ? config.updatePeriod : 5) * 1000
         };
         self.mapOptions = {
-            enabled: (config.displayMode === 'map') || (config.mapOptions && config.mapOptions.enabled === true),
+            enabled: (config.displayMode === 'map') || (config.displayMode === 'radial') || (config.mapOptions && config.mapOptions.enabled === true),
             width: (config.mapOptions && config.mapOptions.width) ? config.mapOptions.width : 200,
             height: (config.mapOptions && config.mapOptions.height) ? config.mapOptions.height : 200,
             zoom: (config.mapOptions && config.mapOptions.zoom) ? config.mapOptions.zoom : 16,

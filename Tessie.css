@@ -174,3 +174,28 @@
 .radial-mode .icons-group .mdi.alert {
   color: #ff453a;
 }
+
+.radial-mode .curved-icon {
+  background: rgba(255,255,255,0.15);
+  backdrop-filter: blur(8px);
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.radial-mode .curved-icon .mdi {
+  color: rgba(255,255,255,0.9);
+}
+
+.radial-mode .curved-icon .mdi.alert {
+  color: #ff453a;
+}
+
+.radial-mode .percentage-text {
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.radial-mode .map-placeholder {
+  border: 2px solid rgba(255,255,255,0.2);
+}
