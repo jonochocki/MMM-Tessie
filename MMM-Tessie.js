@@ -625,8 +625,8 @@ Module.register("MMM-Tessie", {
             <div class=\"car-bg\" style=\"position:absolute; inset:0; width:${carBgWidth}px; background-image:url('${teslaImageUrl}'); background-size: ${carBgWidth}px auto; background-repeat:no-repeat; background-position:left center; opacity:${imageOpacity};\"></div>
             <div class=\"left-content\" style=\"position: relative; z-index: 2;\">
               <div class=\"icons\" style=\"display:flex; gap: 6px; align-items:center; margin-bottom: 8px;\">${renderedStateIcons.join(' ')} ${renderedNetworkIcons.join(' ')} </div>
-              <div class=\"battery-row\" style=\"display:flex; flex-direction: column; align-items: flex-start;\">
-                <div class=\"percent\"><span class=\"bright medium light\">${batteryBigNumber}</span><span class=\"normal small\">${batteryUnit}</span></div>
+              <div class=\"battery-row\" style=\"display:flex; flex-direction: row; align-items: flex-end; gap: 8px;\">
+                <div class=\"percent\" style=\"margin-bottom: 2px;\"><span class=\"bright medium light\">${batteryBigNumber}</span><span class=\"normal small\">${batteryUnit}</span></div>
                 ${batteryHtml}
               </div>
             </div>
