@@ -78,6 +78,7 @@ Module.register("MMM-Tessie", {
         cabinCold: 40
       }
     },
+    showChargeLimit: true,
     showTemps: "hvac_on",
     updatePeriod: 10, // update period in seconds (default increased to 10)
   },
@@ -722,7 +723,7 @@ Module.register("MMM-Tessie", {
                       text-align: center; 
                       width: ${layWidth}px; 
                       height: 70px">
-            <span class="bright large light">${batteryBigNumber}</span><span class="normal medium">${batteryUnit}</span>
+            <span class="bright large light">${this.config.showChargeLimit && this.config.rangeDisplay === "%" && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100 ? `${batteryBigNumber}<span style="font-size: 0.6em; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>` : batteryBigNumber}</span><span class="normal medium">${batteryUnit}</span>
             ${charging ? `<div class=\"normal small\" style=\"margin-top: 4px;\">${formatRemainingShort(timeToFull)}</div>` : ''}
           </div>
 
@@ -891,7 +892,7 @@ Module.register("MMM-Tessie", {
             <div class=\"left-content\" style=\"position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; justify-content: space-between;\">
               <div class=\"icons\" style=\"display:flex; gap: 6px; align-items:center;\">${renderedStateIcons.join(' ')} ${renderedNetworkIcons.join(' ')} </div>
               <div class=\"battery-row\" style=\"display:flex; flex-direction: column; align-items: flex-start;\">
-                <div class=\"percent\" style=\"margin-bottom: 4px;\"><span class=\"bright medium light\">${batteryBigNumber}</span><span class=\"normal small\">${batteryUnit}</span>${(pluggedIn && (this.subscriptions["charge_time"].value > 0.0)) ? `<div class=\\"normal small\\" style=\\"margin-top: 2px;\\">${formatRemainingShort(this.subscriptions["charge_time"].value)}</div>` : ''}</div>
+                <div class=\"percent\" style=\"margin-bottom: 4px;\"><span class=\"bright medium light\">${this.config.showChargeLimit && this.config.rangeDisplay === "%" && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100 ? `${batteryBigNumber}<span style=\"font-size: 0.6em; color: rgba(255,255,255,0.6); vertical-align: super;\">/${chargeLimitSOC}</span>` : batteryBigNumber}</span><span class=\"normal small\">${batteryUnit}</span>${(pluggedIn && (this.subscriptions["charge_time"].value > 0.0)) ? `<div class=\\"normal small\\" style=\\"margin-top: 2px;\\">${formatRemainingShort(this.subscriptions["charge_time"].value)}</div>` : ''}</div>
                 ${batteryHtml}
                 ${renderIntelligence()}
               </div>
@@ -968,7 +969,7 @@ Module.register("MMM-Tessie", {
     const percentageOverlay = showPercentage ? `
       <div class="percentage-overlay" style="position:absolute; bottom:-28px; left:50%; transform:translateX(-50%); z-index:5; text-align:center;">
         <div class="percentage-text" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); border-radius: 9999px; padding: 4px 10px; display:inline-block;">
-          <span class="bright medium light">${batteryBigNumber}</span><span class="normal small">${batteryUnit}</span>
+          <span class="bright medium light">${this.config.showChargeLimit && this.config.rangeDisplay === "%" && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100 ? `${batteryBigNumber}<span style="font-size: 0.6em; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>` : batteryBigNumber}</span><span class="normal small">${batteryUnit}</span>
         </div>
       </div>` : '';
 
@@ -1125,7 +1126,7 @@ Module.register("MMM-Tessie", {
       `;
     };
 
-    // iOS 26 gauge-style battery display
+    // iOS 26 gauge-style battery chip with glassmorphism
     const renderSmartBattery = () => {
       const levelClass = (batteryUsable <= 20) ? 'critical' : (batteryUsable <= 50 ? 'warning' : 'normal');
       const levelColors = {
@@ -1134,23 +1135,40 @@ Module.register("MMM-Tessie", {
         normal: '#30D158'
       };
 
+      // Format battery display with optional charge limit
+      const formatBatteryDisplay = () => {
+        if (this.config.showChargeLimit && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100) {
+          return `${batteryBigNumber}<span style="font-size: 11px; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>${batteryUnit}`;
+        }
+        return `${batteryBigNumber}${batteryUnit}`;
+      };
+
       return `
-        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 6px;">
+        <div style="
+          background: rgba(255, 255, 255, 0.08);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 12px;
+          padding: 12px 14px;
+          margin-bottom: 8px;
+          display: flex; align-items: center; gap: 12px;
+        ">
           <span style="
-            font-size: 14px; font-weight: 600;
+            font-size: 13px; font-weight: 600;
             color: rgba(255, 255, 255, 0.7);
           ">Battery</span>
-          <div style="flex: 1; display: flex; align-items: center; gap: 8px;">
+          <div style="flex: 1; display: flex; align-items: center; gap: 10px;">
             <div style="
-              flex: 1; height: 3px;
+              flex: 1; height: 4px;
               background: rgba(255, 255, 255, 0.15);
-              border-radius: 1.5px; overflow: hidden;
+              border-radius: 2px; overflow: hidden;
             ">
               <div style="
                 width: ${batteryUsable}%;
                 height: 100%;
                 background: ${levelColors[levelClass]};
-                border-radius: 1.5px;
+                border-radius: 2px;
                 transition: all 0.4s ease;
                 ${charging ? `
                   background: linear-gradient(90deg, 
@@ -1165,8 +1183,8 @@ Module.register("MMM-Tessie", {
             <span style="
               font-size: 16px; font-weight: 700;
               color: ${levelColors[levelClass]};
-              min-width: 45px; text-align: right;
-            ">${batteryBigNumber}${batteryUnit}</span>
+              min-width: 50px; text-align: right;
+            ">${formatBatteryDisplay()}</span>
           </div>
         </div>
       `;
@@ -1291,35 +1309,32 @@ Module.register("MMM-Tessie", {
       ">
         <link href="https://cdn.materialdesignicons.com/7.4.47/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
         
-        <!-- Oval gradient mask behind vehicle -->
-        <div class="smart-bg-base" style="
-          position:absolute; inset:0; z-index:0;
-          background: transparent;
-        "></div>
+        <!-- Animated gradient backdrop -->
         <div class="smart-gradient-anim" style="
           position:absolute; 
-          left:50%; top:50%; 
+          left:50%; top:40%; 
           transform: translate(-50%,-50%); 
           z-index:1; 
-          width: ${Math.round(smartWidth * 1.2)}px;
-          height: ${Math.round(smartHeight * 0.8)}px;
-          filter: blur(45px) saturate(120%);
-          background: radial-gradient(ellipse 100% 80% at center, 
-            rgba(var(--accent-rgb),0.35), 
-            rgba(var(--accent-rgb),0.15) 50%, 
-            transparent 70%);
-          animation: smartAurora 28s linear infinite;
-          opacity: 0.85;
+          width: ${Math.round(smartWidth * 1.1)}px;
+          height: ${Math.round(smartHeight * 0.7)}px;
+          filter: blur(42px) saturate(110%);
+          background: radial-gradient(ellipse 85% 70% at center, 
+            rgba(var(--accent-rgb),0.32), 
+            rgba(var(--accent-rgb),0.18) 40%, 
+            rgba(var(--accent-rgb),0.08) 60%,
+            transparent 80%);
+          animation: smartPulse 8s ease-in-out infinite alternate;
+          opacity: 0.9;
         "></div>
         
-        <!-- Centered car overlay -->
+        <!-- Centered car overlay (positioned higher) -->
         <div class="smart-car-overlay" style="
           position:absolute; 
-          left:50%; top:50%; 
+          left:50%; top:38%; 
           transform: translate(-50%,-50%); 
-          z-index:2; opacity: 0.35;
-          width:${Math.round(smartWidth * 0.85)}px; 
-          height:${Math.round(smartWidth * 0.55)}px; 
+          z-index:2; opacity: 0.38;
+          width:${Math.round(smartWidth * 0.82)}px; 
+          height:${Math.round(smartWidth * 0.52)}px; 
           background-image: url('${teslaImageUrl}'); 
           background-repeat:no-repeat;
           background-position:center center; 
@@ -1352,9 +1367,15 @@ Module.register("MMM-Tessie", {
           0% { background-position: -200% 0; } 
           100% { background-position: 200% 0; } 
         }
-        @keyframes smartAurora { 
-          0% { transform: translate(-50%,-50%) rotate(0deg) scale(1.1); } 
-          100% { transform: translate(-50%,-50%) rotate(360deg) scale(1.1); } 
+        @keyframes smartPulse { 
+          0% { 
+            transform: translate(-50%,-50%) scale(1.0); 
+            opacity: 0.85; 
+          } 
+          100% { 
+            transform: translate(-50%,-50%) scale(1.08); 
+            opacity: 0.95; 
+          } 
         }
         .smart-mode * { box-sizing: border-box; }
       </style>
