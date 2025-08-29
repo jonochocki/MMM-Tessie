@@ -448,6 +448,25 @@ Module.register("MMM-Tessie", {
       batteryReserveVisible ? `<span class="mdi mdi-snowflake bright light"></span>` : '';
 
     const batteryBigNumber = this.config.rangeDisplay === "%" ? batteryUsable : idealRange;
+    const formatRemainingShort = function (remHrs) {
+      if (!remHrs || remHrs <= 0) return '';
+      const totalMins = Math.max(0, Math.round(remHrs * 60));
+      const hrs = Math.floor(totalMins / 60);
+      const mins = totalMins % 60;
+      const hPart = hrs > 0 ? (hrs + "h ") : '';
+      return hPart + mins + "m remaining";
+    };
+    const formatChargeStartLocal = function (isoStr) {
+      if (!isoStr || isoStr === '') return '';
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return '';
+      let hrs = d.getHours();
+      const mins = d.getMinutes();
+      const ampm = hrs >= 12 ? 'PM' : 'AM';
+      hrs = hrs % 12; if (hrs === 0) hrs = 12;
+      const mm = (mins < 10 ? '0' : '') + mins;
+      return `Charge starts at ${hrs}:${mm}${ampm}`;
+    };
     const batteryUnit = this.config.rangeDisplay === "%" ? "%" : (this.config.imperial ? "mi" : "km");
 
     const showTemps = ((this.config.showTemps === "always") ||
@@ -512,6 +531,7 @@ Module.register("MMM-Tessie", {
                       width: ${layWidth}px; 
                       height: 70px">
             <span class="bright large light">${batteryBigNumber}</span><span class="normal medium">${batteryUnit}</span>
+            ${charging ? `<div class=\"normal small\" style=\"margin-top: 4px;\">${formatRemainingShort(timeToFull)}</div>` : ((pluggedIn && chargeStart && chargeStart !== '') ? `<div class=\"normal small\" style=\"margin-top: 4px;\">${formatChargeStartLocal(chargeStart)}</div>` : '')}
           </div>
 
           <!-- State icons -->
@@ -570,6 +590,25 @@ Module.register("MMM-Tessie", {
 
     const batteryUnit = this.config.rangeDisplay === "%" ? "%" : (this.config.imperial ? "mi" : "km");
     const batteryBigNumber = this.config.rangeDisplay === "%" ? batteryUsable : idealRange;
+    const formatRemainingShort = function (remHrs) {
+      if (!remHrs || remHrs <= 0) return '';
+      const totalMins = Math.max(0, Math.round(remHrs * 60));
+      const hrs = Math.floor(totalMins / 60);
+      const mins = totalMins % 60;
+      const hPart = hrs > 0 ? (hrs + "h ") : '';
+      return hPart + mins + "m remaining";
+    };
+    const formatChargeStartLocal = function (isoStr) {
+      if (!isoStr || isoStr === '') return '';
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return '';
+      let hrs = d.getHours();
+      const mins = d.getMinutes();
+      const ampm = hrs >= 12 ? 'PM' : 'AM';
+      hrs = hrs % 12; if (hrs === 0) hrs = 12;
+      const mm = (mins < 10 ? '0' : '') + mins;
+      return `Charge starts at ${hrs}:${mm}${ampm}`;
+    };
 
     const stateIcons = [];
     if (state == "asleep" || state == "suspended") stateIcons.push("power-sleep");
@@ -635,7 +674,7 @@ Module.register("MMM-Tessie", {
             <div class=\"left-content\" style=\"position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; justify-content: space-between;\">
               <div class=\"icons\" style=\"display:flex; gap: 6px; align-items:center;\">${renderedStateIcons.join(' ')} ${renderedNetworkIcons.join(' ')} </div>
               <div class=\"battery-row\" style=\"display:flex; flex-direction: column; align-items: flex-start;\">
-                <div class=\"percent\" style=\"margin-bottom: 4px;\"><span class=\"bright medium light\">${batteryBigNumber}</span><span class=\"normal small\">${batteryUnit}</span></div>
+                <div class=\"percent\" style=\"margin-bottom: 4px;\"><span class=\"bright medium light\">${batteryBigNumber}</span><span class=\"normal small\">${batteryUnit}</span>${(pluggedIn && (this.subscriptions["charge_time"].value > 0.0)) ? `<div class=\\"normal small\\" style=\\"margin-top: 2px;\\">${formatRemainingShort(this.subscriptions["charge_time"].value)}</div>` : ((pluggedIn && (this.subscriptions["charge_time"].value <= 0.0) && (this.subscriptions["charge_start"].value && this.subscriptions["charge_start"].value !== '')) ? `<div class=\\"normal small\\" style=\\"margin-top: 2px;\\">${formatChargeStartLocal(this.subscriptions["charge_start"].value)}</div>` : '')}</div>
                 ${batteryHtml}
               </div>
             </div>
