@@ -306,6 +306,8 @@ Module.register("MMM-Tessie", {
     const cold = toCFromUser(coldUser);
     const hotClear = toCFromUser(hotUser - hotDeltaUser);
     const coldClear = toCFromUser(coldUser + coldDeltaUser);
+    
+    console.log(`Debug: cabinC=${cabinC}°C, hotThreshold=${hot}°C, coldThreshold=${cold}°C, hotUser=${hotUser}, coldUser=${coldUser}, imperial=${unitIsF}`);
 
     // Eligibility predicates
     const candidates = [];
@@ -321,9 +323,11 @@ Module.register("MMM-Tessie", {
 
       if (hotEligible || (wasTempHot && !hotClears)) {
         candidates.push({ id: 'tempHot', priority: 4, message: () => `Cabin hot (${this.config.imperial ? Math.round((cabinC * 9/5) + 32) : Math.round(cabinC)}°)` });
+        console.log(`Added tempHot: hotEligible=${hotEligible}, wasTempHot=${wasTempHot}, hotClears=${hotClears}`);
       }
       if (coldEligible || (wasTempCold && !coldClears)) {
         candidates.push({ id: 'tempCold', priority: 4, message: () => `Cabin cold (${this.config.imperial ? Math.round((cabinC * 9/5) + 32) : Math.round(cabinC)}°)` });
+        console.log(`Added tempCold: coldEligible=${coldEligible}, wasTempCold=${wasTempCold}, coldClears=${coldClears}`);
       }
     }
 
@@ -1167,9 +1171,9 @@ Module.register("MMM-Tessie", {
       return `
         <div class="semicircle-gauge" style="
           position: absolute;
-          right: 20px;
-          top: 50%;
-          transform: translateY(-50%);
+          right: 15px;
+          bottom: 25%;
+          transform: rotate(45deg);
           width: ${gaugeSize}px;
           height: ${gaugeSize/2 + 20}px;
           display: flex;
@@ -1180,7 +1184,7 @@ Module.register("MMM-Tessie", {
             <!-- Background arc -->
             <path d="M ${strokeWidth/2} ${gaugeSize/2} A ${radius} ${radius} 0 0 1 ${gaugeSize - strokeWidth/2} ${gaugeSize/2}"
                   fill="none" 
-                  stroke="rgba(255,255,255,0.2)" 
+                  stroke="rgba(255,255,255,0.25)" 
                   stroke-width="${strokeWidth}"
                   stroke-linecap="round"/>
             <!-- Progress arc -->
@@ -1191,7 +1195,7 @@ Module.register("MMM-Tessie", {
                   stroke-linecap="round"
                   stroke-dasharray="${progress} ${remaining}"
                   style="
-                    filter: drop-shadow(0 0 8px ${levelColors[levelClass]}60);
+                    filter: drop-shadow(0 0 12px ${levelColors[levelClass]}80);
                     ${charging ? `
                       stroke: url(#chargingGradient);
                       animation: smartGaugeShimmer 2s ease-in-out infinite;
@@ -1201,7 +1205,7 @@ Module.register("MMM-Tessie", {
               <defs>
                 <linearGradient id="chargingGradient" x1="0%" y1="0%" x2="100%" y2="0%">
                   <stop offset="0%" style="stop-color:${levelColors[levelClass]};stop-opacity:1" />
-                  <stop offset="50%" style="stop-color:rgba(255,255,255,0.8);stop-opacity:1" />
+                  <stop offset="50%" style="stop-color:rgba(255,255,255,0.9);stop-opacity:1" />
                   <stop offset="100%" style="stop-color:${levelColors[levelClass]};stop-opacity:1" />
                   <animateTransform attributeName="gradientTransform" type="translate"
                     values="-100 0; 100 0; -100 0" dur="2s" repeatCount="indefinite"/>
@@ -1210,12 +1214,16 @@ Module.register("MMM-Tessie", {
             ` : ''}
           </svg>
           <div style="
-            margin-top: -8px;
-            font-size: 16px; font-weight: 800;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 14px; font-weight: 800;
             color: ${levelColors[levelClass]};
             text-align: center;
-            text-shadow: 0 2px 8px rgba(0,0,0,0.8);
-            filter: drop-shadow(0 0 6px ${levelColors[levelClass]}40);
+            text-shadow: 0 2px 10px rgba(0,0,0,0.9);
+            filter: drop-shadow(0 0 8px ${levelColors[levelClass]}60);
+            white-space: nowrap;
           ">${formatBatteryDisplay()}</div>
         </div>
       `;
@@ -1390,10 +1398,10 @@ Module.register("MMM-Tessie", {
           pointer-events:none;
         "></div>
         
-        <!-- Content layer -->
+        <!-- Content layer with proper spacing for gauge -->
         <div class="smart-content" style="
           position: relative; z-index: 3; 
-          padding: 18px 18px 20px 18px;
+          padding: 18px 140px 20px 18px;
           min-height: ${smartHeight}px;
           display: flex;
           flex-direction: column;
@@ -1411,7 +1419,7 @@ Module.register("MMM-Tessie", {
           </div>
         </div>
         
-        <!-- Semicircle battery gauge positioned to right of car -->
+        <!-- Semicircle battery gauge positioned to curve around trunk -->
         ${renderSemicircleBattery()}
       </div>
       
