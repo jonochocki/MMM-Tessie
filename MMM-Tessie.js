@@ -356,7 +356,7 @@ Module.register("MMM-Tessie", {
     // Sort by priority desc, then by recency (more recent eligibility wins)
     // Tuned behavior constants (not user-configurable)
     const minDwellMs = 10000;
-    const debounceMs = 2000;
+    const debounceMs = 500; // Reduced from 2000ms for faster temperature response
     const allowInterrupt = true;
 
     const nowEligible = candidates.map(c => {
@@ -1150,15 +1150,11 @@ Module.register("MMM-Tessie", {
           -webkit-backdrop-filter: blur(20px);
           border: 1px solid rgba(255, 255, 255, 0.12);
           border-radius: 9999px;
-          padding: 12px 16px;
+          padding: 8px 14px;
           margin-bottom: 8px;
-          display: flex; align-items: center; gap: 12px;
+          display: flex; align-items: center; gap: 10px;
         ">
-          <span style="
-            font-size: 13px; font-weight: 600;
-            color: rgba(255, 255, 255, 0.7);
-          ">Battery</span>
-          <div style="flex: 1; display: flex; align-items: center; gap: 10px;">
+          <div style="flex: 1; display: flex; align-items: center; gap: 8px;">
             <div style="
               flex: 1; height: 4px;
               background: rgba(255, 255, 255, 0.15);
@@ -1181,9 +1177,9 @@ Module.register("MMM-Tessie", {
               "></div>
             </div>
             <span style="
-              font-size: 16px; font-weight: 700;
+              font-size: 15px; font-weight: 700;
               color: ${levelColors[levelClass]};
-              min-width: 50px; text-align: right;
+              min-width: 45px; text-align: right;
             ">${formatBatteryDisplay()}</span>
           </div>
         </div>
