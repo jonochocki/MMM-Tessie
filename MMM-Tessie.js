@@ -18,7 +18,7 @@ Module.register("MMM-Tessie", {
       accessToken: null,
       vin: null,
     },
-    displayMode: 'graphic', // 'graphic' | 'map' | 'radial'
+    displayMode: 'graphic', // 'graphic' | 'map' | 'radial' | 'smart'
     mapOptions: {
       enabled: false, // if true or displayMode === 'map', backend fetches map image
       width: 200,
@@ -263,6 +263,8 @@ Module.register("MMM-Tessie", {
       this.generateMapDom(wrapper, data);
     } else if (this.config.displayMode && this.config.displayMode.toLowerCase() === 'radial') {
       this.generateRadialDom(wrapper, data);
+    } else if (this.config.displayMode && this.config.displayMode.toLowerCase() === 'smart') {
+      this.generateSmartDom(wrapper, data);
     } else {
       this.generateGraphicDom(wrapper, data);
     }
@@ -1003,5 +1005,263 @@ Module.register("MMM-Tessie", {
           </div>
         </div>
       </div>`;
+  },
+
+  generateSmartDom: function (wrapper, data) {
+    console.log(this.name + ": generateSmartDom called with data: ", data);
+
+    const {
+      carName, state, battery, batteryUsable, chargeLimitSOC,
+      chargeStart, timeToFull, pluggedIn, energyAdded, locked, sentry,
+      idealRange, estRange, speed, outside_temp, inside_temp, odometer,
+      windowsOpen, isClimateOn, isHealthy, charging,
+      doorsOpen, trunkOpen, frunkOpen, isUserPresent, isUpdateAvailable,
+      isPreconditioning, geofence, tpms_pressure_fl, tpms_pressure_fr, tpms_pressure_rl, tpms_pressure_rr
+    } = data;
+
+    // iOS 26 Design System
+    const smartWidth = this.config.sizeOptions?.width ?? 400;
+    const smartHeight = this.config.sizeOptions?.height ?? 280;
+    const topOffset = this.config.sizeOptions?.topOffset ?? -20;
+    
+    const batteryBigNumber = this.config.rangeDisplay === "%" ? batteryUsable : idealRange;
+    const batteryUnit = this.config.rangeDisplay === "%" ? "%" : (this.config.imperial ? "mi" : "km");
+
+    // Intelligence section (primary focus)
+    const renderIntelligenceHero = () => {
+      const topLevelEnabled = (this.config.intelligence !== false);
+      if (!topLevelEnabled) return '';
+      
+      const id = this.intelState && this.intelState.currentId;
+      let heroContent = '';
+      let heroIcon = '';
+      let priority = 'normal';
+
+      if (id === 'tempHot') {
+        const c = this.config.imperial ? ((inside_temp - 32) * 5 / 9) : inside_temp;
+        const disp = this.config.imperial ? `${Math.round(inside_temp)}°` : `${Math.round(c)}°`;
+        heroContent = `Cabin temperature is high at ${disp}`;
+        heroIcon = 'mdi-thermometer-alert';
+        priority = 'critical';
+      } else if (id === 'tempCold') {
+        const c = this.config.imperial ? ((inside_temp - 32) * 5 / 9) : inside_temp;
+        const disp = this.config.imperial ? `${Math.round(inside_temp)}°` : `${Math.round(c)}°`;
+        heroContent = `Cabin temperature is low at ${disp}`;
+        heroIcon = 'mdi-snowflake-alert';
+        priority = 'critical';
+      } else if (id === 'chargingEta') {
+        const totalMins = Math.max(0, Math.round(timeToFull * 60));
+        const hrs = Math.floor(totalMins / 60);
+        const mins = totalMins % 60;
+        const hPart = hrs > 0 ? `${hrs}h ` : '';
+        heroContent = `${hPart}${mins}m until fully charged`;
+        heroIcon = 'mdi-lightning-bolt';
+        priority = 'active';
+      } else if (id === 'chargeScheduled') {
+        const d = new Date(chargeStart);
+        if (!isNaN(d.getTime())) {
+          let hrs = d.getHours();
+          const mins = d.getMinutes();
+          const ampm = hrs >= 12 ? 'PM' : 'AM';
+          hrs = hrs % 12; if (hrs === 0) hrs = 12;
+          const mm = (mins < 10 ? '0' : '') + mins;
+          heroContent = `Scheduled to start charging at ${hrs}:${mm}${ampm}`;
+          heroIcon = 'mdi-clock-outline';
+          priority = 'scheduled';
+        }
+      } else {
+        // Default state when no intelligence is active
+        heroContent = state === 'online' ? 'Vehicle is ready' : 
+                     state === 'asleep' ? 'Vehicle is sleeping' :
+                     state === 'driving' ? 'Currently driving' : 'Vehicle offline';
+        heroIcon = state === 'online' ? 'mdi-check-circle' :
+                   state === 'asleep' ? 'mdi-sleep' :
+                   state === 'driving' ? 'mdi-steering' : 'mdi-wifi-off';
+        priority = 'normal';
+      }
+
+      const priorityColors = {
+        critical: '#FF453A',
+        active: '#30D158', 
+        scheduled: '#007AFF',
+        normal: '#8E8E93'
+      };
+
+      const priorityBgs = {
+        critical: 'rgba(255, 69, 58, 0.1)',
+        active: 'rgba(48, 209, 88, 0.1)',
+        scheduled: 'rgba(0, 122, 255, 0.1)',
+        normal: 'rgba(142, 142, 147, 0.1)'
+      };
+
+      return `
+        <div class="smart-intelligence-hero" style="
+          background: ${priorityBgs[priority]};
+          border: 1px solid ${priorityColors[priority]}33;
+          border-radius: 16px;
+          padding: 20px;
+          margin-bottom: 16px;
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+        ">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span class="mdi ${heroIcon}" style="
+              font-size: 24px; 
+              color: ${priorityColors[priority]};
+            "></span>
+            <div style="flex: 1;">
+              <div style="
+                font-size: 17px;
+                font-weight: 600;
+                color: rgba(255, 255, 255, 0.95);
+                line-height: 1.3;
+                margin-bottom: 2px;
+              ">${heroContent}</div>
+              <div style="
+                font-size: 13px;
+                color: rgba(255, 255, 255, 0.6);
+                font-weight: 500;
+              ">${carName || 'Tesla'}</div>
+            </div>
+          </div>
+        </div>
+      `;
+    };
+
+    // Compact battery display
+    const renderSmartBattery = () => {
+      const levelClass = (batteryUsable <= 20) ? 'critical' : (batteryUsable <= 50 ? 'warning' : 'normal');
+      const levelColors = {
+        critical: '#FF453A',
+        warning: '#FF9F0A', 
+        normal: '#30D158'
+      };
+
+      return `
+        <div class="smart-battery-card" style="
+          background: rgba(28, 28, 30, 0.8);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 12px;
+          padding: 16px;
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+        ">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <div style="
+              font-size: 15px;
+              font-weight: 600;
+              color: rgba(255, 255, 255, 0.8);
+            ">Battery</div>
+            <div style="display: flex; align-items: baseline; gap: 2px;">
+              <span style="
+                font-size: 28px;
+                font-weight: 700;
+                color: ${levelColors[levelClass]};
+                line-height: 1;
+              ">${batteryBigNumber}</span>
+              <span style="
+                font-size: 17px;
+                font-weight: 600;
+                color: rgba(255, 255, 255, 0.6);
+              ">${batteryUnit}</span>
+            </div>
+          </div>
+          <div style="
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            overflow: hidden;
+          ">
+            <div style="
+              width: ${batteryUsable}%;
+              height: 100%;
+              background: ${levelColors[levelClass]};
+              border-radius: 2px;
+              transition: width 0.3s ease;
+              ${charging ? `
+                background: linear-gradient(90deg, 
+                  ${levelColors[levelClass]} 0%, 
+                  rgba(255,255,255,0.3) 50%, 
+                  ${levelColors[levelClass]} 100%);
+                background-size: 200% 100%;
+                animation: smartChargingShimmer 2s ease-in-out infinite;
+              ` : ''}
+            "></div>
+          </div>
+        </div>
+      `;
+    };
+
+    // Quick status indicators
+    const renderSmartStatus = () => {
+      const statusItems = [];
+      
+      if (pluggedIn === 'true') statusItems.push({ icon: 'mdi-power-plug', label: 'Plugged In', color: '#30D158' });
+      if (locked === 'false') statusItems.push({ icon: 'mdi-lock-open-variant', label: 'Unlocked', color: '#FF9F0A' });
+      if (sentry === 'true') statusItems.push({ icon: 'mdi-shield-check', label: 'Sentry Mode', color: '#007AFF' });
+      if (isClimateOn === 'true') statusItems.push({ icon: 'mdi-air-conditioner', label: 'Climate On', color: '#5AC8FA' });
+
+      if (statusItems.length === 0) return '';
+
+      return `
+        <div class="smart-status-grid" style="
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 8px;
+          margin-top: 12px;
+        ">
+          ${statusItems.slice(0, 4).map(item => `
+            <div style="
+              display: flex;
+              align-items: center;
+              gap: 6px;
+              padding: 8px 12px;
+              background: rgba(${item.color === '#30D158' ? '48, 209, 88' : 
+                               item.color === '#FF9F0A' ? '255, 159, 10' :
+                               item.color === '#007AFF' ? '0, 122, 255' : '90, 200, 250'}, 0.15);
+              border-radius: 8px;
+              border: 1px solid ${item.color}33;
+            ">
+              <span class="mdi ${item.icon}" style="
+                font-size: 14px;
+                color: ${item.color};
+              "></span>
+              <span style="
+                font-size: 12px;
+                font-weight: 500;
+                color: rgba(255, 255, 255, 0.8);
+              ">${item.label}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    };
+
+    wrapper.innerHTML = `
+      <div class="smart-mode" style="
+        width: ${smartWidth}px;
+        min-height: ${smartHeight}px;
+        margin-top: ${topOffset}px;
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+      ">
+        <link href="https://cdn.materialdesignicons.com/7.4.47/css/materialdesignicons.min.css" rel="stylesheet" type="text/css">
+        
+        ${renderIntelligenceHero()}
+        ${renderSmartBattery()}
+        ${renderSmartStatus()}
+      </div>
+      
+      <style>
+        @keyframes smartChargingShimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
+        
+        .smart-mode * {
+          box-sizing: border-box;
+        }
+      </style>
+    `;
   }
 });
