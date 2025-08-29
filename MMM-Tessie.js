@@ -1110,15 +1110,16 @@ Module.register("MMM-Tessie", {
       return `
         <div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">
           <span class="mdi ${heroIcon}" style="
-            font-size: 22px; color: ${priorityColors[priority]};
-            text-shadow: 0 2px 12px rgba(0,0,0,0.4);
+            font-size: 24px; color: ${priorityColors[priority]};
+            text-shadow: 0 3px 15px rgba(0,0,0,0.6), 0 1px 4px rgba(0,0,0,0.8);
+            filter: drop-shadow(0 0 8px ${priorityColors[priority]}40);
           "></span>
           <div style="flex:1;">
             <div style="
-              font-size: 18px; font-weight: 700;
-              color: rgba(255,255,255,0.96);
+              font-size: 19px; font-weight: 800;
+              color: rgba(255,255,255,0.98);
               line-height:1.35; letter-spacing: -0.01em;
-              text-shadow: 0 1px 6px rgba(0,0,0,0.3);
+              text-shadow: 0 2px 12px rgba(0,0,0,0.7), 0 1px 4px rgba(0,0,0,0.9);
             ">${heroContent}</div>
           </div>
         </div>
@@ -1144,14 +1145,15 @@ Module.register("MMM-Tessie", {
 
       return `
         <div style="
-          background: rgba(255, 255, 255, 0.08);
+          background: rgba(255, 255, 255, 0.15);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
-          border: 1px solid rgba(255, 255, 255, 0.12);
+          border: 1px solid rgba(255, 255, 255, 0.25);
           border-radius: 9999px;
           padding: 6px 12px;
           margin-bottom: 8px;
           display: flex; align-items: center; gap: 10px;
+          box-shadow: 0 2px 12px rgba(0,0,0,0.4);
         ">
           <div style="flex: 1; display: flex; align-items: center; gap: 8px;">
             <div style="
@@ -1285,13 +1287,23 @@ Module.register("MMM-Tessie", {
             <div style="
               display:flex; align-items:center; gap:6px;
               border-radius: 9999px; padding: 6px 10px;
-              background: ${c.warning ? 'rgba(255, 159, 10, 0.2)' : 'rgba(255,255,255,0.12)'};
-              border: 1px solid ${c.warning ? 'rgba(255, 159, 10, 0.4)' : 'rgba(255,255,255,0.2)'};
+              background: ${c.warning ? 'rgba(255, 159, 10, 0.4)' : 'rgba(255,255,255,0.2)'};
+              border: 1px solid ${c.warning ? 'rgba(255, 159, 10, 0.7)' : 'rgba(255,255,255,0.35)'};
               backdrop-filter: blur(12px);
+              box-shadow: ${c.warning ? '0 2px 12px rgba(255, 159, 10, 0.4)' : '0 2px 8px rgba(0,0,0,0.3)'};
             ">
-              <span class="mdi ${c.icon}" style="font-size:14px; color: ${c.warning ? '#FF9F0A' : 'rgba(255,255,255,0.9)'};"></span>
-              ${c.secondIcon ? `<span class="mdi ${c.secondIcon}" style="font-size:12px; color: rgba(255,255,255,0.7); margin-left: -2px;"></span>` : ''}
-              <span style="font-size:12px; color: ${c.warning ? '#FF9F0A' : 'rgba(255,255,255,0.9)'}; font-weight:600;">${c.text}</span>
+              <span class="mdi ${c.icon}" style="
+                font-size:14px; 
+                color: ${c.warning ? '#FFB340' : 'rgba(255,255,255,0.95)'};
+                text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+              "></span>
+              ${c.secondIcon ? `<span class="mdi ${c.secondIcon}" style="font-size:12px; color: rgba(255,255,255,0.85); margin-left: -2px; text-shadow: 0 1px 4px rgba(0,0,0,0.7);"></span>` : ''}
+              <span style="
+                font-size:12px; 
+                color: ${c.warning ? '#FFB340' : 'rgba(255,255,255,0.95)'}; 
+                font-weight:700;
+                text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+              ">${c.text}</span>
             </div>
           `).join('')}
         </div>
@@ -1316,13 +1328,14 @@ Module.register("MMM-Tessie", {
           width: ${Math.round(smartWidth * 1.1)}px;
           height: ${Math.round(smartHeight * 0.7)}px;
           filter: blur(42px) saturate(110%);
-          background: radial-gradient(ellipse 85% 70% at center, 
-            rgba(var(--accent-rgb),0.55), 
-            rgba(var(--accent-rgb),0.35) 40%, 
-            rgba(var(--accent-rgb),0.18) 60%,
-            transparent 80%);
+          background: radial-gradient(ellipse 90% 75% at center, 
+            rgba(var(--accent-rgb),0.75), 
+            rgba(var(--accent-rgb),0.55) 35%, 
+            rgba(var(--accent-rgb),0.35) 55%,
+            rgba(var(--accent-rgb),0.15) 75%,
+            transparent 90%);
           animation: smartPulse 8s ease-in-out infinite alternate;
-          opacity: 0.95;
+          opacity: 1.0;
         "></div>
         
         <!-- Centered car overlay (positioned higher) -->
