@@ -1027,7 +1027,27 @@ Module.register("MMM-Tessie", {
     const batteryBigNumber = this.config.rangeDisplay === "%" ? batteryUsable : idealRange;
     const batteryUnit = this.config.rangeDisplay === "%" ? "%" : (this.config.imperial ? "mi" : "km");
 
-    // Intelligence section (primary focus)
+    // Vehicle color-based accent
+    const teslaModel = this.config.carImageOptions?.model ?? this.subscriptions["image_model"]?.value ?? "m3";
+    const teslaView = this.config.carImageOptions?.view ?? "STUD_3QTR";
+    const teslaOptions = this.config.carImageOptions?.options ?? this.subscriptions["image_options"]?.value ?? "PPSW,W32B,SLR1";
+    const teslaImageWidth = 720;
+    const teslaImageUrl = `https://static-assets.tesla.com/v1/compositor/?model=${teslaModel}&view=${teslaView}&size=${teslaImageWidth}&options=${teslaOptions}&bkba_opt=1`;
+
+    const getAccentFromPaint = (optsStr) => {
+      if (!optsStr || typeof optsStr !== 'string') return { hex: '#007AFF', rgb: '0, 122, 255' };
+      const u = optsStr.toUpperCase();
+      if (u.includes('PPMR')) return { hex: '#FF3B30', rgb: '255, 59, 48' }; // Red
+      if (u.includes('PPSB')) return { hex: '#007AFF', rgb: '0, 122, 255' }; // Blue
+      if (u.includes('PMNG')) return { hex: '#8E8E93', rgb: '142, 142, 147' }; // Midnight Silver
+      if (u.includes('PMSS')) return { hex: '#D1D1D6', rgb: '209, 209, 214' }; // Silver
+      if (u.includes('PBSB')) return { hex: '#FFFFFF', rgb: '255, 255, 255' }; // Black
+      if (u.includes('PPSW')) return { hex: '#F2F2F7', rgb: '242, 242, 247' }; // White
+      return { hex: '#007AFF', rgb: '0, 122, 255' }; // Default blue
+    };
+    const accent = getAccentFromPaint(teslaOptions);
+
+    // Streamlined hero (no container, just content)
     const renderIntelligenceHero = () => {
       const topLevelEnabled = (this.config.intelligence !== false);
       if (!topLevelEnabled) return '';
@@ -1087,55 +1107,19 @@ Module.register("MMM-Tessie", {
         normal: '#8E8E93'
       };
 
-      const priorityBgs = {
-        critical: 'rgba(255, 69, 58, 0.1)',
-        active: 'rgba(48, 209, 88, 0.1)',
-        scheduled: 'rgba(0, 122, 255, 0.1)',
-        normal: 'rgba(142, 142, 147, 0.1)'
-      };
-
       return `
-        <div class=\"smart-intel-hero-wrap\" style=\"
-          position: relative;
-          border-radius: 18px;
-          overflow: hidden;
-          margin-bottom: 16px;
-        \">
-          <div class=\"smart-intel-hero-bg\" style=\"
-            position:absolute; inset:0;
-            background: radial-gradient(120% 120% at 0% 0%, rgba(0,122,255,0.35), transparent 60%),
-                        radial-gradient(120% 120% at 100% 0%, rgba(48,209,88,0.30), transparent 60%),
-                        radial-gradient(140% 100% at 50% 100%, rgba(255,159,10,0.25), transparent 55%);
-            animation: smartHueShift 18s ease-in-out infinite alternate;
-            filter: saturate(110%);
-          \"></div>
-          <div class=\"smart-intel-hero-glass\" style=\"
-            position:absolute; inset:0;
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            background: linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0.25));
-            border: 1px solid rgba(255,255,255,0.14);
-          \"></div>
-          <div class=\"smart-intel-hero-content\" style=\"
-            position: relative; z-index: 2; padding: 18px 18px;
-            display:flex; align-items:center; gap:12px;
-          \">
-            <span class=\"mdi ${heroIcon}\" style=\"
-              font-size: 24px; color: ${priorityColors[priority]};
-              text-shadow: 0 2px 10px rgba(0,0,0,0.35);
-            \"></span>
-            <div style=\"flex:1;\">
-              <div style=\"
-                font-size: 17px; font-weight: 700;
-                color: rgba(255,255,255,0.96);
-                line-height:1.35; margin-bottom: 2px;
-                letter-spacing: -0.01em;
-              \">${heroContent}</div>
-              <div style=\"
-                font-size: 13px; color: rgba(255,255,255,0.68);
-                font-weight: 600;
-              \">${carName || 'Tesla'}</div>
-            </div>
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">
+          <span class="mdi ${heroIcon}" style="
+            font-size: 22px; color: ${priorityColors[priority]};
+            text-shadow: 0 2px 12px rgba(0,0,0,0.4);
+          "></span>
+          <div style="flex:1;">
+            <div style="
+              font-size: 18px; font-weight: 700;
+              color: rgba(255,255,255,0.96);
+              line-height:1.35; letter-spacing: -0.01em;
+              text-shadow: 0 1px 6px rgba(0,0,0,0.3);
+            ">${heroContent}</div>
           </div>
         </div>
       `;
@@ -1251,21 +1235,38 @@ Module.register("MMM-Tessie", {
       `;
     };
 
-    // Intelligence chips row (explicit visibility of multiple signals)
+    // Smart chips: context-aware, non-duplicate secondary info
     const renderIntelChips = () => {
       const chips = [];
-      const id = this.intelState && this.intelState.currentId;
+      const currentId = this.intelState && this.intelState.currentId;
       const enabled = this.config.intelligence !== false ? (this.config.intelligenceOptions || {}) : {};
-      // Charging ETA chip
-      if (enabled.charging !== false && pluggedIn && timeToFull > 0) {
+      
+      // Temperature warning chip (only if not already hero)
+      if (enabled.temperature !== false && inside_temp != null && currentId !== 'tempHot' && currentId !== 'tempCold') {
+        const unitIsF = !!this.config.imperial;
+        const t = parseFloat(inside_temp);
+        const thresholdsUser = (enabled.tempThresholds || {});
+        const hotUser = (typeof thresholdsUser.cabinHot === 'number' ? thresholdsUser.cabinHot : (unitIsF ? 90 : 32));
+        const coldUser = (typeof thresholdsUser.cabinCold === 'number' ? thresholdsUser.cabinCold : (unitIsF ? 40 : 4));
+        
+        if (t >= hotUser) {
+          chips.push({ icon: 'mdi-thermometer-alert', text: `Hot ${Math.round(t)}°`, priority: 1 });
+        } else if (t <= coldUser) {
+          chips.push({ icon: 'mdi-snowflake-alert', text: `Cold ${Math.round(t)}°`, priority: 1 });
+        }
+      }
+      
+      // Charging ETA chip (only if not already hero)
+      if (enabled.charging !== false && pluggedIn && timeToFull > 0 && currentId !== 'chargingEta') {
         const totalMins = Math.max(0, Math.round(timeToFull * 60));
         const hrs = Math.floor(totalMins / 60);
         const mins = totalMins % 60;
-        const text = `${hrs > 0 ? (hrs + 'h ') : ''}${mins}m remaining`;
-        chips.push({ icon: 'mdi-lightning-bolt', text });
+        const text = `${hrs > 0 ? (hrs + 'h ') : ''}${mins}m`;
+        chips.push({ icon: 'mdi-lightning-bolt', text, priority: 2 });
       }
-      // Scheduled chip
-      if (enabled.schedule !== false && pluggedIn && (!timeToFull || timeToFull <= 0) && chargeStart) {
+      
+      // Scheduled chip (only if not already hero)
+      if (enabled.schedule !== false && pluggedIn && (!timeToFull || timeToFull <= 0) && chargeStart && currentId !== 'chargeScheduled') {
         const d = new Date(chargeStart);
         if (!isNaN(d.getTime()) && d.getTime() > Date.now()) {
           let hrs = d.getHours();
@@ -1273,77 +1274,104 @@ Module.register("MMM-Tessie", {
           const ampm = hrs >= 12 ? 'PM' : 'AM';
           hrs = hrs % 12; if (hrs === 0) hrs = 12;
           const mm = (mins < 10 ? '0' : '') + mins;
-          chips.push({ icon: 'mdi-clock-outline', text: `Starts ${hrs}:${mm}${ampm}` });
+          chips.push({ icon: 'mdi-clock-outline', text: `${hrs}:${mm}${ampm}`, priority: 3 });
         }
       }
-      // Temperature chip
-      if (enabled.temperature !== false && inside_temp != null) {
-        chips.push({ icon: 'mdi-thermometer', text: `${inside_temp}° cabin` });
-      }
-      if (chips.length === 0) return '';
+      
+      // Sort by priority, take top 2
+      chips.sort((a, b) => a.priority - b.priority);
+      const selected = chips.slice(0, 2);
+      
+      if (selected.length === 0) return '';
       return `
-        <div class=\"smart-chips\" style=\"
-          display:flex; gap:8px; flex-wrap:wrap; margin: 8px 0 14px 0;
-        \">
-          ${chips.map(c => `
-            <div style=\"
+        <div class="smart-chips" style="display:flex; gap:8px; flex-wrap:wrap; margin: 2px 0 12px 0;">
+          ${selected.map(c => `
+            <div style="
               display:flex; align-items:center; gap:6px;
               border-radius: 9999px; padding: 6px 10px;
-              background: rgba(255,255,255,0.10);
-              border: 1px solid rgba(255,255,255,0.18);
+              background: rgba(255,255,255,0.12);
+              border: 1px solid rgba(255,255,255,0.2);
               backdrop-filter: blur(12px);
-            \">
-              <span class=\"mdi ${c.icon}\" style=\"font-size:14px; color: rgba(255,255,255,0.85);\"></span>
-              <span style=\"font-size:12px; color: rgba(255,255,255,0.85); font-weight:600;\">${c.text}</span>
+            ">
+              <span class="mdi ${c.icon}" style="font-size:14px; color: rgba(255,255,255,0.9);"></span>
+              <span style="font-size:12px; color: rgba(255,255,255,0.9); font-weight:600;">${c.text}</span>
             </div>
           `).join('')}
         </div>
       `;
     };
 
-    // Car image overlay behind content
-    const teslaModel = this.config.carImageOptions?.model ?? this.subscriptions["image_model"]?.value ?? "m3";
-    const teslaView = this.config.carImageOptions?.view ?? "STUD_3QTR";
-    const teslaOptions = this.config.carImageOptions?.options ?? this.subscriptions["image_options"]?.value ?? "PPSW,W32B,SLR1";
-    const teslaImageWidth = 720;
-    const teslaImageUrl = `https://static-assets.tesla.com/v1/compositor/?model=${teslaModel}&view=${teslaView}&size=${teslaImageWidth}&options=${teslaOptions}&bkba_opt=1`;
-
     wrapper.innerHTML = `
-      <div class=\"smart-mode\" style=\"
+      <div class="smart-mode" style="
         width: ${smartWidth}px; min-height: ${smartHeight}px; margin-top: ${topOffset}px;
-        position: relative; overflow: hidden; border-radius: 18px;
+        position: relative; 
         font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
-      \">
-        <link href=\"https://cdn.materialdesignicons.com/7.4.47/css/materialdesignicons.min.css\" rel=\"stylesheet\" type=\"text/css\"> 
-        <div class=\"smart-bg\" style=\"
-          position:absolute; inset:0; z-index:0;
-          background: linear-gradient(135deg, rgba(10,10,14,1) 0%, rgba(26,26,32,1) 100%);
-        \"></div>
-        <div class=\"smart-gradient-anim\" style=\"
-          position:absolute; inset: -20%; z-index:1; filter: blur(40px) saturate(120%);
-          background: conic-gradient(from 0deg at 50% 50%, rgba(0,122,255,0.25), rgba(48,209,88,0.2), rgba(255,159,10,0.18), rgba(0,122,255,0.25));
-          animation: smartAurora 28s linear infinite;
+        --accent-rgb: ${accent.rgb};
+      ">
+        <link href="https://cdn.materialdesignicons.com/7.4.47/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
+        
+        <!-- Full-bleed animated gradient background -->
+        <div class="smart-bg-base" style="
+          position:absolute; inset:-15%; z-index:0;
+          background: radial-gradient(120% 120% at 50% 50%, rgba(8,8,12,1) 0%, rgba(20,20,26,1) 60%);
+        "></div>
+        <div class="smart-gradient-anim" style="
+          position:absolute; inset: -35%; z-index:1; 
+          filter: blur(50px) saturate(130%);
+          background: conic-gradient(from 0deg at 50% 50%, 
+            rgba(var(--accent-rgb),0.28), 
+            rgba(255,255,255,0.08), 
+            rgba(var(--accent-rgb),0.22), 
+            rgba(255,255,255,0.12), 
+            rgba(var(--accent-rgb),0.28));
+          animation: smartAurora 32s linear infinite;
           opacity: 0.9;
-        \"></div>
-        <div class=\"smart-car-overlay\" style=\"
-          position:absolute; inset:0; z-index:2; opacity: 0.28;
-          background-image: url('${teslaImageUrl}'); background-repeat:no-repeat;
-          background-position: right bottom; background-size: ${Math.round(smartWidth * 0.7)}px auto;
+        "></div>
+        
+        <!-- Centered car overlay -->
+        <div class="smart-car-overlay" style="
+          position:absolute; 
+          left:50%; top:50%; 
+          transform: translate(-50%,-50%); 
+          z-index:2; opacity: 0.35;
+          width:${Math.round(smartWidth * 0.85)}px; 
+          height:${Math.round(smartWidth * 0.55)}px; 
+          background-image: url('${teslaImageUrl}'); 
+          background-repeat:no-repeat;
+          background-position:center center; 
+          background-size: contain; 
           pointer-events:none;
-        \"></div>
-        <div class=\"smart-content\" style=\"
-          position: relative; z-index: 3; padding: 16px 16px 18px 16px;
-        \">
-          ${renderIntelligenceHero()}
-          ${renderIntelChips()}
-          ${renderSmartBattery()}
-          ${renderSmartStatus()}
+        "></div>
+        
+        <!-- Content layer -->
+        <div class="smart-content" style="
+          position: relative; z-index: 3; 
+          padding: 18px 18px 20px 18px;
+          min-height: ${smartHeight}px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+        ">
+          <div class="smart-top">
+            ${renderIntelligenceHero()}
+            ${renderIntelChips()}
+          </div>
+          <div class="smart-bottom">
+            ${renderSmartBattery()}
+            ${renderSmartStatus()}
+          </div>
         </div>
       </div>
+      
       <style>
-        @keyframes smartChargingShimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-        @keyframes smartAurora { 0% { transform: rotate(0deg) scale(1.1); } 100% { transform: rotate(360deg) scale(1.1); } }
-        @keyframes smartHueShift { 0% { filter:hue-rotate(0deg); } 100% { filter:hue-rotate(20deg);} }
+        @keyframes smartChargingShimmer { 
+          0% { background-position: -200% 0; } 
+          100% { background-position: 200% 0; } 
+        }
+        @keyframes smartAurora { 
+          0% { transform: rotate(0deg) scale(1.2); } 
+          100% { transform: rotate(360deg) scale(1.2); } 
+        }
         .smart-mode * { box-sizing: border-box; }
       </style>
     `;
