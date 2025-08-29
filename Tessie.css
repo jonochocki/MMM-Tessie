@@ -92,7 +92,7 @@
   transition: width 200ms ease;
 }
 
-/* Charging pulse: subtle brightness sweep within fill area */
+/* Charging pulse: visible brightness sweep left-to-right within fill area */
 .battery.ios26.battery--charging .battery-fill::after {
   content: "";
   position: absolute;
@@ -101,19 +101,19 @@
   background: linear-gradient(
     90deg,
     rgba(255,255,255,0.0) 0%,
-    rgba(255,255,255,0.0) 30%,
-    rgba(255,255,255,0.25) 50%,
-    rgba(255,255,255,0.0) 70%,
+    rgba(255,255,255,0.0) 25%,
+    rgba(255,255,255,0.5) 50%,
+    rgba(255,255,255,0.0) 75%,
     rgba(255,255,255,0.0) 100%
   );
   background-size: 200% 100%;
-  animation: batteryChargingGlow 2s ease-in-out infinite;
+  animation: batteryChargingGlow 1.8s ease-in-out infinite;
   will-change: background-position;
 }
 
 @keyframes batteryChargingGlow {
-  0% { background-position: -100% 0; }
-  100% { background-position: 100% 0; }
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
 }
 
 .battery.ios26.battery--medium .battery-fill {
