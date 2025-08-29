@@ -1020,8 +1020,8 @@ Module.register("MMM-Tessie", {
     } = data;
 
     // iOS 26 Design System
-    const smartWidth = this.config.sizeOptions?.width ?? 400;
-    const smartHeight = this.config.sizeOptions?.height ?? 280;
+    const smartWidth = this.config.sizeOptions?.width ?? 420;
+    const smartHeight = this.config.sizeOptions?.height ?? 300;
     const topOffset = this.config.sizeOptions?.topOffset ?? -20;
     
     const batteryBigNumber = this.config.rangeDisplay === "%" ? batteryUsable : idealRange;
@@ -1095,33 +1095,46 @@ Module.register("MMM-Tessie", {
       };
 
       return `
-        <div class="smart-intelligence-hero" style="
-          background: ${priorityBgs[priority]};
-          border: 1px solid ${priorityColors[priority]}33;
-          border-radius: 16px;
-          padding: 20px;
+        <div class=\"smart-intel-hero-wrap\" style=\"
+          position: relative;
+          border-radius: 18px;
+          overflow: hidden;
           margin-bottom: 16px;
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-        ">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <span class="mdi ${heroIcon}" style="
-              font-size: 24px; 
-              color: ${priorityColors[priority]};
-            "></span>
-            <div style="flex: 1;">
-              <div style="
-                font-size: 17px;
+        \">
+          <div class=\"smart-intel-hero-bg\" style=\"
+            position:absolute; inset:0;
+            background: radial-gradient(120% 120% at 0% 0%, rgba(0,122,255,0.35), transparent 60%),
+                        radial-gradient(120% 120% at 100% 0%, rgba(48,209,88,0.30), transparent 60%),
+                        radial-gradient(140% 100% at 50% 100%, rgba(255,159,10,0.25), transparent 55%);
+            animation: smartHueShift 18s ease-in-out infinite alternate;
+            filter: saturate(110%);
+          \"></div>
+          <div class=\"smart-intel-hero-glass\" style=\"
+            position:absolute; inset:0;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            background: linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0.25));
+            border: 1px solid rgba(255,255,255,0.14);
+          \"></div>
+          <div class=\"smart-intel-hero-content\" style=\"
+            position: relative; z-index: 2; padding: 18px 18px;
+            display:flex; align-items:center; gap:12px;
+          \">
+            <span class=\"mdi ${heroIcon}\" style=\"
+              font-size: 24px; color: ${priorityColors[priority]};
+              text-shadow: 0 2px 10px rgba(0,0,0,0.35);
+            \"></span>
+            <div style=\"flex:1;\">
+              <div style=\"
+                font-size: 17px; font-weight: 700;
+                color: rgba(255,255,255,0.96);
+                line-height:1.35; margin-bottom: 2px;
+                letter-spacing: -0.01em;
+              \">${heroContent}</div>
+              <div style=\"
+                font-size: 13px; color: rgba(255,255,255,0.68);
                 font-weight: 600;
-                color: rgba(255, 255, 255, 0.95);
-                line-height: 1.3;
-                margin-bottom: 2px;
-              ">${heroContent}</div>
-              <div style="
-                font-size: 13px;
-                color: rgba(255, 255, 255, 0.6);
-                font-weight: 500;
-              ">${carName || 'Tesla'}</div>
+              \">${carName || 'Tesla'}</div>
             </div>
           </div>
         </div>
@@ -1238,29 +1251,100 @@ Module.register("MMM-Tessie", {
       `;
     };
 
+    // Intelligence chips row (explicit visibility of multiple signals)
+    const renderIntelChips = () => {
+      const chips = [];
+      const id = this.intelState && this.intelState.currentId;
+      const enabled = this.config.intelligence !== false ? (this.config.intelligenceOptions || {}) : {};
+      // Charging ETA chip
+      if (enabled.charging !== false && pluggedIn && timeToFull > 0) {
+        const totalMins = Math.max(0, Math.round(timeToFull * 60));
+        const hrs = Math.floor(totalMins / 60);
+        const mins = totalMins % 60;
+        const text = `${hrs > 0 ? (hrs + 'h ') : ''}${mins}m remaining`;
+        chips.push({ icon: 'mdi-lightning-bolt', text });
+      }
+      // Scheduled chip
+      if (enabled.schedule !== false && pluggedIn && (!timeToFull || timeToFull <= 0) && chargeStart) {
+        const d = new Date(chargeStart);
+        if (!isNaN(d.getTime()) && d.getTime() > Date.now()) {
+          let hrs = d.getHours();
+          const mins = d.getMinutes();
+          const ampm = hrs >= 12 ? 'PM' : 'AM';
+          hrs = hrs % 12; if (hrs === 0) hrs = 12;
+          const mm = (mins < 10 ? '0' : '') + mins;
+          chips.push({ icon: 'mdi-clock-outline', text: `Starts ${hrs}:${mm}${ampm}` });
+        }
+      }
+      // Temperature chip
+      if (enabled.temperature !== false && inside_temp != null) {
+        chips.push({ icon: 'mdi-thermometer', text: `${inside_temp}° cabin` });
+      }
+      if (chips.length === 0) return '';
+      return `
+        <div class=\"smart-chips\" style=\"
+          display:flex; gap:8px; flex-wrap:wrap; margin: 8px 0 14px 0;
+        \">
+          ${chips.map(c => `
+            <div style=\"
+              display:flex; align-items:center; gap:6px;
+              border-radius: 9999px; padding: 6px 10px;
+              background: rgba(255,255,255,0.10);
+              border: 1px solid rgba(255,255,255,0.18);
+              backdrop-filter: blur(12px);
+            \">
+              <span class=\"mdi ${c.icon}\" style=\"font-size:14px; color: rgba(255,255,255,0.85);\"></span>
+              <span style=\"font-size:12px; color: rgba(255,255,255,0.85); font-weight:600;\">${c.text}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    };
+
+    // Car image overlay behind content
+    const teslaModel = this.config.carImageOptions?.model ?? this.subscriptions["image_model"]?.value ?? "m3";
+    const teslaView = this.config.carImageOptions?.view ?? "STUD_3QTR";
+    const teslaOptions = this.config.carImageOptions?.options ?? this.subscriptions["image_options"]?.value ?? "PPSW,W32B,SLR1";
+    const teslaImageWidth = 720;
+    const teslaImageUrl = `https://static-assets.tesla.com/v1/compositor/?model=${teslaModel}&view=${teslaView}&size=${teslaImageWidth}&options=${teslaOptions}&bkba_opt=1`;
+
     wrapper.innerHTML = `
-      <div class="smart-mode" style="
-        width: ${smartWidth}px;
-        min-height: ${smartHeight}px;
-        margin-top: ${topOffset}px;
+      <div class=\"smart-mode\" style=\"
+        width: ${smartWidth}px; min-height: ${smartHeight}px; margin-top: ${topOffset}px;
+        position: relative; overflow: hidden; border-radius: 18px;
         font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
-      ">
-        <link href="https://cdn.materialdesignicons.com/7.4.47/css/materialdesignicons.min.css" rel="stylesheet" type="text/css">
-        
-        ${renderIntelligenceHero()}
-        ${renderSmartBattery()}
-        ${renderSmartStatus()}
+      \">
+        <link href=\"https://cdn.materialdesignicons.com/7.4.47/css/materialdesignicons.min.css\" rel=\"stylesheet\" type=\"text/css\"> 
+        <div class=\"smart-bg\" style=\"
+          position:absolute; inset:0; z-index:0;
+          background: linear-gradient(135deg, rgba(10,10,14,1) 0%, rgba(26,26,32,1) 100%);
+        \"></div>
+        <div class=\"smart-gradient-anim\" style=\"
+          position:absolute; inset: -20%; z-index:1; filter: blur(40px) saturate(120%);
+          background: conic-gradient(from 0deg at 50% 50%, rgba(0,122,255,0.25), rgba(48,209,88,0.2), rgba(255,159,10,0.18), rgba(0,122,255,0.25));
+          animation: smartAurora 28s linear infinite;
+          opacity: 0.9;
+        \"></div>
+        <div class=\"smart-car-overlay\" style=\"
+          position:absolute; inset:0; z-index:2; opacity: 0.28;
+          background-image: url('${teslaImageUrl}'); background-repeat:no-repeat;
+          background-position: right bottom; background-size: ${Math.round(smartWidth * 0.7)}px auto;
+          pointer-events:none;
+        \"></div>
+        <div class=\"smart-content\" style=\"
+          position: relative; z-index: 3; padding: 16px 16px 18px 16px;
+        \">
+          ${renderIntelligenceHero()}
+          ${renderIntelChips()}
+          ${renderSmartBattery()}
+          ${renderSmartStatus()}
+        </div>
       </div>
-      
       <style>
-        @keyframes smartChargingShimmer {
-          0% { background-position: -200% 0; }
-          100% { background-position: 200% 0; }
-        }
-        
-        .smart-mode * {
-          box-sizing: border-box;
-        }
+        @keyframes smartChargingShimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+        @keyframes smartAurora { 0% { transform: rotate(0deg) scale(1.1); } 100% { transform: rotate(360deg) scale(1.1); } }
+        @keyframes smartHueShift { 0% { filter:hue-rotate(0deg); } 100% { filter:hue-rotate(20deg);} }
+        .smart-mode * { box-sizing: border-box; }
       </style>
     `;
   }
