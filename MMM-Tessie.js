@@ -473,7 +473,7 @@ Module.register("MMM-Tessie", {
       const levelClass = (batteryUsable <= 20) ? 'battery--low' : (batteryUsable <= 50 ? 'battery--medium' : 'battery--high');
 
       batteryBarHtml = `
-        <div class="battery ios26 ${levelClass}"
+        <div class="battery ios26 ${levelClass} ${charging ? 'battery--charging' : ''}"
              style="margin-left: ${(layWidth - layBatWidth) / 2}px;
                     margin-top: ${layBatTopMargin}px;
                     width: ${layBatWidth}px; height: ${layBatHeight}px;">
@@ -605,10 +605,10 @@ Module.register("MMM-Tessie", {
     const limitLeftPx = Math.round(innerWidthPx * (Math.max(0, Math.min(100, chargeLimitSOC)) / 100));
     const levelClass = (batteryUsable <= 20) ? 'battery--low' : (batteryUsable <= 50 ? 'battery--medium' : 'battery--high');
 
-    const batteryOverlayIcon = (pluggedIn && (this.subscriptions["charge_time"].value > 0.0)) ? `<span class="mdi mdi-flash bright light"></span>` : (batteryReserveVisible ? `<span class=\"mdi mdi-snowflake bright light\"></span>` : '');
+    const batteryOverlayIcon = (pluggedIn && (this.subscriptions["charge_time"].value > 0.0)) ? `<span class=\"mdi mdi-flash bright light\"></span>` : (batteryReserveVisible ? `<span class=\"mdi mdi-snowflake bright light\"></span>` : '');
 
     const batteryHtml = `
-      <div class=\"battery ios26 ${levelClass}\"
+      <div class=\"battery ios26 ${levelClass} ${(pluggedIn && (this.subscriptions["charge_time"].value > 0.0)) ? 'battery--charging' : ''}\"
            style=\"margin-top: ${layBatTopMargin}px; width: ${mapBatWidth}px; height: ${mapBatHeight}px;\">
         <div class=\"battery-body\">
           <div class=\"battery-inner\" style=\"width: ${innerWidthPx}px; height: ${innerHeightPx}px;\">

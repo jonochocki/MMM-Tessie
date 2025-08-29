@@ -92,6 +92,33 @@
   transition: width 200ms ease;
 }
 
+/* Charging pulse overlay */
+.battery.ios26.battery--charging .battery-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* green stripes sweeping left→right */
+  background-image: linear-gradient(
+    90deg,
+    rgba(45,210,74,0.35) 0%,
+    rgba(45,210,74,0.35) 25%,
+    rgba(45,210,74,0.0) 25%,
+    rgba(45,210,74,0.0) 50%,
+    rgba(45,210,74,0.35) 50%,
+    rgba(45,210,74,0.35) 75%,
+    rgba(45,210,74,0.0) 75%,
+    rgba(45,210,74,0.0) 100%
+  );
+  background-size: 40px 100%;
+  animation: batteryChargingStripes 1.2s linear infinite;
+}
+
+@keyframes batteryChargingStripes {
+  0% { background-position: 0 0; }
+  100% { background-position: 40px 0; }
+}
+
 .battery.ios26.battery--medium .battery-fill {
   background: linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0.05)) , #ffd23f;
 }
