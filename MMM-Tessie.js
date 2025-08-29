@@ -307,8 +307,6 @@ Module.register("MMM-Tessie", {
     const hotClear = toCFromUser(hotUser - hotDeltaUser);
     const coldClear = toCFromUser(coldUser + coldDeltaUser);
     
-    console.log(`Debug: cabinC=${cabinC}°C, hotThreshold=${hot}°C, coldThreshold=${cold}°C, hotUser=${hotUser}, coldUser=${coldUser}, imperial=${unitIsF}`);
-
     // Eligibility predicates
     const candidates = [];
 
@@ -323,11 +321,9 @@ Module.register("MMM-Tessie", {
 
       if (hotEligible || (wasTempHot && !hotClears)) {
         candidates.push({ id: 'tempHot', priority: 4, message: () => `Cabin hot (${this.config.imperial ? Math.round((cabinC * 9/5) + 32) : Math.round(cabinC)}°)` });
-        console.log(`Added tempHot: hotEligible=${hotEligible}, wasTempHot=${wasTempHot}, hotClears=${hotClears}`);
       }
       if (coldEligible || (wasTempCold && !coldClears)) {
         candidates.push({ id: 'tempCold', priority: 4, message: () => `Cabin cold (${this.config.imperial ? Math.round((cabinC * 9/5) + 32) : Math.round(cabinC)}°)` });
-        console.log(`Added tempCold: coldEligible=${coldEligible}, wasTempCold=${wasTempCold}, coldClears=${coldClears}`);
       }
     }
 
@@ -1171,8 +1167,8 @@ Module.register("MMM-Tessie", {
       return `
         <div class="semicircle-gauge" style="
           position: absolute;
-          right: 15px;
-          bottom: 25%;
+          right: 20px;
+          top: 35%;
           transform: rotate(45deg);
           width: ${gaugeSize}px;
           height: ${gaugeSize/2 + 20}px;
@@ -1371,26 +1367,23 @@ Module.register("MMM-Tessie", {
           height: ${Math.round(smartHeight * 0.9)}px;
           filter: blur(35px) saturate(140%);
           background: 
-            radial-gradient(ellipse 100% 80% at 30% 50%, rgba(var(--accent-rgb),0.8), transparent 60%),
-            radial-gradient(ellipse 100% 80% at 70% 50%, rgba(var(--accent-rgb),0.6), transparent 60%),
-            conic-gradient(from 0deg at 50% 50%, 
-              rgba(var(--accent-rgb),0.4), 
-              rgba(255,255,255,0.2) 90deg, 
-              rgba(var(--accent-rgb),0.6) 180deg, 
-              rgba(255,255,255,0.15) 270deg, 
-              rgba(var(--accent-rgb),0.4) 360deg);
-          animation: smartFlow 12s ease-in-out infinite, smartRotate 20s linear infinite;
+            radial-gradient(ellipse 100% 80% at 50% 50%, 
+              rgba(var(--accent-rgb),0.8), 
+              rgba(var(--accent-rgb),0.5) 40%, 
+              rgba(var(--accent-rgb),0.2) 70%,
+              transparent 85%);
+          animation: smartBreath 8s ease-in-out infinite;
           opacity: 1.0;
         "></div>
         
-        <!-- Centered car overlay (positioned higher) -->
+        <!-- Centered car overlay (positioned higher and left) -->
         <div class="smart-car-overlay" style="
           position:absolute; 
-          left:50%; top:38%; 
+          left:40%; top:32%; 
           transform: translate(-50%,-50%); 
-          z-index:2; opacity: 0.38;
-          width:${Math.round(smartWidth * 0.82)}px; 
-          height:${Math.round(smartWidth * 0.52)}px; 
+          z-index:2; opacity: 0.42;
+          width:${Math.round(smartWidth * 0.75)}px; 
+          height:${Math.round(smartWidth * 0.48)}px; 
           background-image: url('${teslaImageUrl}'); 
           background-repeat:no-repeat;
           background-position:center center; 
@@ -1428,23 +1421,27 @@ Module.register("MMM-Tessie", {
           0% { background-position: -200% 0; } 
           100% { background-position: 200% 0; } 
         }
-        @keyframes smartFlow { 
-          0% { 
+        @keyframes smartBreath { 
+          0%, 100% { 
             transform: translate(-50%,-50%) scale(1.0); 
+            filter: blur(35px) saturate(140%) hue-rotate(0deg);
             opacity: 0.9; 
           } 
-          50% { 
-            transform: translate(-50%,-50%) scale(1.12); 
+          25% { 
+            transform: translate(-50%,-50%) scale(1.08); 
+            filter: blur(38px) saturate(150%) hue-rotate(8deg);
             opacity: 1.0; 
           } 
-          100% { 
-            transform: translate(-50%,-50%) scale(1.0); 
-            opacity: 0.9; 
+          50% { 
+            transform: translate(-50%,-50%) scale(1.15); 
+            filter: blur(32px) saturate(160%) hue-rotate(15deg);
+            opacity: 1.0; 
           } 
-        }
-        @keyframes smartRotate { 
-          0% { filter: blur(35px) saturate(140%) hue-rotate(0deg); } 
-          100% { filter: blur(35px) saturate(140%) hue-rotate(30deg); } 
+          75% { 
+            transform: translate(-50%,-50%) scale(1.08); 
+            filter: blur(38px) saturate(150%) hue-rotate(8deg);
+            opacity: 1.0; 
+          } 
         }
         @keyframes smartGaugeShimmer {
           0% { stroke-dashoffset: 0; }
