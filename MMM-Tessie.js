@@ -1047,8 +1047,8 @@ Module.register("MMM-Tessie", {
     };
     const accent = getAccentFromPaint(teslaOptions);
 
-    // Streamlined hero (no container, just content)
-    const renderIntelligenceHero = () => {
+    // Hero as smart chip (moved to middle position)
+    const renderHeroChip = () => {
       const topLevelEnabled = (this.config.intelligence !== false);
       if (!topLevelEnabled) return '';
       
@@ -1060,13 +1060,13 @@ Module.register("MMM-Tessie", {
       if (id === 'tempHot') {
         const c = this.config.imperial ? ((inside_temp - 32) * 5 / 9) : inside_temp;
         const disp = this.config.imperial ? `${Math.round(inside_temp)}°` : `${Math.round(c)}°`;
-        heroContent = `Cabin temperature is high at ${disp}`;
+        heroContent = `Cabin high at ${disp}`;
         heroIcon = 'mdi-thermometer-alert';
         priority = 'critical';
       } else if (id === 'tempCold') {
         const c = this.config.imperial ? ((inside_temp - 32) * 5 / 9) : inside_temp;
         const disp = this.config.imperial ? `${Math.round(inside_temp)}°` : `${Math.round(c)}°`;
-        heroContent = `Cabin temperature is low at ${disp}`;
+        heroContent = `Cabin low at ${disp}`;
         heroIcon = 'mdi-snowflake-alert';
         priority = 'critical';
       } else if (id === 'chargingEta') {
@@ -1074,7 +1074,7 @@ Module.register("MMM-Tessie", {
         const hrs = Math.floor(totalMins / 60);
         const mins = totalMins % 60;
         const hPart = hrs > 0 ? `${hrs}h ` : '';
-        heroContent = `${hPart}${mins}m until fully charged`;
+        heroContent = `${hPart}${mins}m remaining`;
         heroIcon = 'mdi-lightning-bolt';
         priority = 'active';
       } else if (id === 'chargeScheduled') {
@@ -1085,15 +1085,15 @@ Module.register("MMM-Tessie", {
           const ampm = hrs >= 12 ? 'PM' : 'AM';
           hrs = hrs % 12; if (hrs === 0) hrs = 12;
           const mm = (mins < 10 ? '0' : '') + mins;
-          heroContent = `Scheduled to start charging at ${hrs}:${mm}${ampm}`;
-          heroIcon = 'mdi-clock-outline';
+          heroContent = `Starts at ${hrs}:${mm}${ampm}`;
+          heroIcon = 'mdi-power-plug';
           priority = 'scheduled';
         }
       } else {
         // Default state when no intelligence is active
-        heroContent = state === 'online' ? 'Vehicle is ready' : 
-                     state === 'asleep' ? 'Vehicle is sleeping' :
-                     state === 'driving' ? 'Currently driving' : 'Vehicle offline';
+        heroContent = state === 'online' ? 'Ready' : 
+                     state === 'asleep' ? 'Sleeping' :
+                     state === 'driving' ? 'Driving' : 'Offline';
         heroIcon = state === 'online' ? 'mdi-check-circle' :
                    state === 'asleep' ? 'mdi-sleep' :
                    state === 'driving' ? 'mdi-steering' : 'mdi-wifi-off';
@@ -1107,27 +1107,41 @@ Module.register("MMM-Tessie", {
         normal: '#8E8E93'
       };
 
+      const priorityBgs = {
+        critical: 'rgba(255, 69, 58, 0.4)',
+        active: 'rgba(48, 209, 88, 0.35)',
+        scheduled: 'rgba(0, 122, 255, 0.35)',
+        normal: 'rgba(255, 255, 255, 0.15)'
+      };
+
       return `
-        <div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">
+        <div style="
+          background: ${priorityBgs[priority]};
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border: 1px solid ${priority === 'critical' ? 'rgba(255, 69, 58, 0.7)' : 'rgba(255, 255, 255, 0.25)'};
+          border-radius: 9999px;
+          padding: 10px 14px;
+          margin-bottom: 12px;
+          display: flex; align-items: center; gap: 10px;
+          box-shadow: 0 3px 16px rgba(0,0,0,0.5), ${priority === 'critical' ? '0 0 20px rgba(255, 69, 58, 0.4)' : '0 2px 8px rgba(0,0,0,0.3)'};
+        ">
           <span class="mdi ${heroIcon}" style="
-            font-size: 24px; color: ${priorityColors[priority]};
-            text-shadow: 0 3px 15px rgba(0,0,0,0.6), 0 1px 4px rgba(0,0,0,0.8);
-            filter: drop-shadow(0 0 8px ${priorityColors[priority]}40);
+            font-size: 18px; color: ${priorityColors[priority]};
+            text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+            filter: drop-shadow(0 0 6px ${priorityColors[priority]}60);
           "></span>
-          <div style="flex:1;">
-            <div style="
-              font-size: 19px; font-weight: 800;
-              color: rgba(255,255,255,0.98);
-              line-height:1.35; letter-spacing: -0.01em;
-              text-shadow: 0 2px 12px rgba(0,0,0,0.7), 0 1px 4px rgba(0,0,0,0.9);
-            ">${heroContent}</div>
-          </div>
+          <span style="
+            font-size: 15px; font-weight: 700;
+            color: rgba(255,255,255,0.98);
+            text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+          ">${heroContent}</span>
         </div>
       `;
     };
 
-    // iOS 26 gauge-style battery chip with glassmorphism
-    const renderSmartBattery = () => {
+    // iOS/watchOS semicircle gauge positioned to right of car
+    const renderSemicircleBattery = () => {
       const levelClass = (batteryUsable <= 20) ? 'critical' : (batteryUsable <= 50 ? 'warning' : 'normal');
       const levelColors = {
         critical: '#FF453A',
@@ -1135,54 +1149,74 @@ Module.register("MMM-Tessie", {
         normal: '#30D158'
       };
 
+      const gaugeSize = 120;
+      const strokeWidth = 8;
+      const radius = (gaugeSize - strokeWidth) / 2;
+      const circumference = Math.PI * radius; // Half circle
+      const progress = (batteryUsable / 100) * circumference;
+      const remaining = circumference - progress;
+
       // Format battery display with optional charge limit
       const formatBatteryDisplay = () => {
         if (this.config.showChargeLimit && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100) {
-          return `${batteryBigNumber}${batteryUnit}<span style="font-size: 11px; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>`;
+          return `${batteryBigNumber}${batteryUnit}<span style="font-size: 10px; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>`;
         }
         return `${batteryBigNumber}${batteryUnit}`;
       };
 
       return `
-        <div style="
-          background: rgba(255, 255, 255, 0.15);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-          border: 1px solid rgba(255, 255, 255, 0.25);
-          border-radius: 9999px;
-          padding: 6px 12px;
-          margin-bottom: 8px;
-          display: flex; align-items: center; gap: 10px;
-          box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+        <div class="semicircle-gauge" style="
+          position: absolute;
+          right: 20px;
+          top: 50%;
+          transform: translateY(-50%);
+          width: ${gaugeSize}px;
+          height: ${gaugeSize/2 + 20}px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
         ">
-          <div style="flex: 1; display: flex; align-items: center; gap: 8px;">
-            <div style="
-              flex: 1; height: 3px;
-              background: rgba(255, 255, 255, 0.15);
-              border-radius: 1.5px; overflow: hidden;
-            ">
-              <div style="
-                width: ${batteryUsable}%;
-                height: 100%;
-                background: ${levelColors[levelClass]};
-                border-radius: 1.5px;
-                transition: all 0.4s ease;
-                ${charging ? `
-                  background: linear-gradient(90deg, 
-                    ${levelColors[levelClass]} 0%, 
-                    rgba(255,255,255,0.4) 50%, 
-                    ${levelColors[levelClass]} 100%);
-                  background-size: 200% 100%;
-                  animation: smartChargingShimmer 2s ease-in-out infinite;
-                ` : ''}
-              "></div>
-            </div>
-            <span style="
-              font-size: 15px; font-weight: 700;
-              color: ${levelColors[levelClass]};
-              min-width: 45px; text-align: right;
-            ">${formatBatteryDisplay()}</span>
-          </div>
+          <svg width="${gaugeSize}" height="${gaugeSize/2 + 10}" viewBox="0 0 ${gaugeSize} ${gaugeSize/2 + 10}" style="overflow: visible;">
+            <!-- Background arc -->
+            <path d="M ${strokeWidth/2} ${gaugeSize/2} A ${radius} ${radius} 0 0 1 ${gaugeSize - strokeWidth/2} ${gaugeSize/2}"
+                  fill="none" 
+                  stroke="rgba(255,255,255,0.2)" 
+                  stroke-width="${strokeWidth}"
+                  stroke-linecap="round"/>
+            <!-- Progress arc -->
+            <path d="M ${strokeWidth/2} ${gaugeSize/2} A ${radius} ${radius} 0 0 1 ${gaugeSize - strokeWidth/2} ${gaugeSize/2}"
+                  fill="none" 
+                  stroke="${levelColors[levelClass]}" 
+                  stroke-width="${strokeWidth}"
+                  stroke-linecap="round"
+                  stroke-dasharray="${progress} ${remaining}"
+                  style="
+                    filter: drop-shadow(0 0 8px ${levelColors[levelClass]}60);
+                    ${charging ? `
+                      stroke: url(#chargingGradient);
+                      animation: smartGaugeShimmer 2s ease-in-out infinite;
+                    ` : ''}
+                  "/>
+            ${charging ? `
+              <defs>
+                <linearGradient id="chargingGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:${levelColors[levelClass]};stop-opacity:1" />
+                  <stop offset="50%" style="stop-color:rgba(255,255,255,0.8);stop-opacity:1" />
+                  <stop offset="100%" style="stop-color:${levelColors[levelClass]};stop-opacity:1" />
+                  <animateTransform attributeName="gradientTransform" type="translate"
+                    values="-100 0; 100 0; -100 0" dur="2s" repeatCount="indefinite"/>
+                </linearGradient>
+              </defs>
+            ` : ''}
+          </svg>
+          <div style="
+            margin-top: -8px;
+            font-size: 16px; font-weight: 800;
+            color: ${levelColors[levelClass]};
+            text-align: center;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+            filter: drop-shadow(0 0 6px ${levelColors[levelClass]}40);
+          ">${formatBatteryDisplay()}</div>
         </div>
       `;
     };
@@ -1319,22 +1353,25 @@ Module.register("MMM-Tessie", {
       ">
         <link href="https://cdn.materialdesignicons.com/7.4.47/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
         
-        <!-- Animated gradient backdrop -->
+        <!-- Dynamic animated gradient backdrop -->
         <div class="smart-gradient-anim" style="
           position:absolute; 
           left:50%; top:40%; 
           transform: translate(-50%,-50%); 
           z-index:1; 
-          width: ${Math.round(smartWidth * 1.1)}px;
-          height: ${Math.round(smartHeight * 0.7)}px;
-          filter: blur(42px) saturate(110%);
-          background: radial-gradient(ellipse 90% 75% at center, 
-            rgba(var(--accent-rgb),0.75), 
-            rgba(var(--accent-rgb),0.55) 35%, 
-            rgba(var(--accent-rgb),0.35) 55%,
-            rgba(var(--accent-rgb),0.15) 75%,
-            transparent 90%);
-          animation: smartPulse 8s ease-in-out infinite alternate;
+          width: ${Math.round(smartWidth * 1.3)}px;
+          height: ${Math.round(smartHeight * 0.9)}px;
+          filter: blur(35px) saturate(140%);
+          background: 
+            radial-gradient(ellipse 100% 80% at 30% 50%, rgba(var(--accent-rgb),0.8), transparent 60%),
+            radial-gradient(ellipse 100% 80% at 70% 50%, rgba(var(--accent-rgb),0.6), transparent 60%),
+            conic-gradient(from 0deg at 50% 50%, 
+              rgba(var(--accent-rgb),0.4), 
+              rgba(255,255,255,0.2) 90deg, 
+              rgba(var(--accent-rgb),0.6) 180deg, 
+              rgba(255,255,255,0.15) 270deg, 
+              rgba(var(--accent-rgb),0.4) 360deg);
+          animation: smartFlow 12s ease-in-out infinite, smartRotate 20s linear infinite;
           opacity: 1.0;
         "></div>
         
@@ -1363,14 +1400,19 @@ Module.register("MMM-Tessie", {
           justify-content: space-between;
         ">
           <div class="smart-top">
-            ${renderIntelligenceHero()}
+            <!-- Empty top section for cleaner layout -->
+          </div>
+          <div class="smart-middle">
+            ${renderHeroChip()}
           </div>
           <div class="smart-bottom">
-            ${renderSmartBattery()}
             ${renderIntelChips()}
             ${renderSmartStatus()}
           </div>
         </div>
+        
+        <!-- Semicircle battery gauge positioned to right of car -->
+        ${renderSemicircleBattery()}
       </div>
       
       <style>
@@ -1378,15 +1420,27 @@ Module.register("MMM-Tessie", {
           0% { background-position: -200% 0; } 
           100% { background-position: 200% 0; } 
         }
-        @keyframes smartPulse { 
+        @keyframes smartFlow { 
           0% { 
             transform: translate(-50%,-50%) scale(1.0); 
-            opacity: 0.85; 
+            opacity: 0.9; 
+          } 
+          50% { 
+            transform: translate(-50%,-50%) scale(1.12); 
+            opacity: 1.0; 
           } 
           100% { 
-            transform: translate(-50%,-50%) scale(1.08); 
-            opacity: 0.95; 
+            transform: translate(-50%,-50%) scale(1.0); 
+            opacity: 0.9; 
           } 
+        }
+        @keyframes smartRotate { 
+          0% { filter: blur(35px) saturate(140%) hue-rotate(0deg); } 
+          100% { filter: blur(35px) saturate(140%) hue-rotate(30deg); } 
+        }
+        @keyframes smartGaugeShimmer {
+          0% { stroke-dashoffset: 0; }
+          100% { stroke-dashoffset: 20; }
         }
         .smart-mode * { box-sizing: border-box; }
       </style>
