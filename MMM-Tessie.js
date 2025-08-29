@@ -66,6 +66,18 @@ Module.register("MMM-Tessie", {
         visible: true,
       },
     },
+    // Top-level on/off toggle for Intelligence features (user-friendly)
+    intelligence: true,
+    intelligenceOptions: {
+      charging: true,
+      temperature: true,
+      schedule: true,
+      tempThresholds: {
+        // Defaults are in user's configured units
+        cabinHot: 90,
+        cabinCold: 40
+      }
+    },
     showTemps: "hvac_on",
     updatePeriod: 10, // update period in seconds (default increased to 10)
   },
@@ -94,6 +106,13 @@ Module.register("MMM-Tessie", {
       this.missingCreds = true;
       return;
     }
+    // Initialize intelligence state container
+    this.intelState = {
+      currentId: null,
+      currentPriority: -1,
+      lastChangeAt: 0,
+      lastEligibleAtById: {}
+    };
     this.openTessieConnection();
   },
 
@@ -237,6 +256,9 @@ Module.register("MMM-Tessie", {
     }
 
     console.log(this.name + ": Generating DOM with data: ", data);
+
+    // Update intelligence decision state before rendering
+    this.updateIntelligenceDecision(data);
     if ((this.config.displayMode && this.config.displayMode.toLowerCase() === 'map') || (this.config.mapOptions && this.config.mapOptions.enabled)) {
       this.generateMapDom(wrapper, data);
     } else if (this.config.displayMode && this.config.displayMode.toLowerCase() === 'radial') {
@@ -250,6 +272,149 @@ Module.register("MMM-Tessie", {
       this.generateTableDom(wrapper, data);
 
     return wrapper;
+  },
+
+  // Centralized intelligence selection
+  updateIntelligenceDecision: function (data) {
+    if (this.config.intelligence === false) return;
+    const opts = this.config.intelligenceOptions || {};
+    const thresholdsUser = (opts.tempThresholds || {});
+    const now = Date.now();
+
+    // Utility: Celsius only internally
+    const toC = (t) => {
+      if (t == null) return null;
+      return this.config.imperial ? ((t - 32) * 5 / 9) : t;
+    };
+
+    // Interpret user thresholds in configured units, then convert to Celsius for comparisons
+    const unitIsF = !!this.config.imperial;
+    const toCFromUser = (t) => {
+      if (t == null) return null;
+      return unitIsF ? ((t - 32) * 5 / 9) : t;
+    };
+    const cabinC = toC(data.inside_temp);
+    const hotUser = (typeof thresholdsUser.cabinHot === 'number' ? thresholdsUser.cabinHot : (unitIsF ? 90 : 32));
+    const coldUser = (typeof thresholdsUser.cabinCold === 'number' ? thresholdsUser.cabinCold : (unitIsF ? 40 : 4));
+    // Internal hysteresis deltas (non-configurable)
+    const hotDeltaUser = unitIsF ? 2 : 1;
+    const coldDeltaUser = unitIsF ? 2 : 1;
+    const hot = toCFromUser(hotUser);
+    const cold = toCFromUser(coldUser);
+    const hotClear = toCFromUser(hotUser - hotDeltaUser);
+    const coldClear = toCFromUser(coldUser + coldDeltaUser);
+
+    // Eligibility predicates
+    const candidates = [];
+
+    // P1: Safety (temperature)
+    if (opts.temperature !== false && cabinC != null) {
+      const wasTempHot = this.intelState.currentId === 'tempHot';
+      const wasTempCold = this.intelState.currentId === 'tempCold';
+      const hotEligible = cabinC >= hot;
+      const hotClears = cabinC <= hotClear;
+      const coldEligible = cabinC <= cold;
+      const coldClears = cabinC >= coldClear;
+
+      if (hotEligible || (wasTempHot && !hotClears)) {
+        candidates.push({ id: 'tempHot', priority: 4, message: () => `Cabin hot (${this.config.imperial ? Math.round((cabinC * 9/5) + 32) : Math.round(cabinC)}°)` });
+      }
+      if (coldEligible || (wasTempCold && !coldClears)) {
+        candidates.push({ id: 'tempCold', priority: 4, message: () => `Cabin cold (${this.config.imperial ? Math.round((cabinC * 9/5) + 32) : Math.round(cabinC)}°)` });
+      }
+    }
+
+    // P2: Charging active
+    if (opts.charging !== false && data.pluggedIn && data.timeToFull && data.timeToFull > 0) {
+      candidates.push({ id: 'chargingEta', priority: 3, message: () => {
+        const totalMins = Math.max(0, Math.round(data.timeToFull * 60));
+        const hrs = Math.floor(totalMins / 60);
+        const mins = totalMins % 60;
+        const hPart = hrs > 0 ? (hrs + 'h ') : '';
+        return `${hPart}${mins}m remaining`;
+      }});
+    }
+
+    // P3: Scheduled charging
+    if (opts.schedule !== false && data.pluggedIn && (!data.timeToFull || data.timeToFull <= 0) && data.chargeStart) {
+      const d = new Date(data.chargeStart);
+      if (!isNaN(d.getTime()) && d.getTime() > Date.now()) {
+        candidates.push({ id: 'chargeScheduled', priority: 2, message: () => {
+          let hrs = d.getHours();
+          const mins = d.getMinutes();
+          const ampm = hrs >= 12 ? 'PM' : 'AM';
+          hrs = hrs % 12; if (hrs === 0) hrs = 12;
+          const mm = (mins < 10 ? '0' : '') + mins;
+          return `Charge starts at ${hrs}:${mm}${ampm}`;
+        }});
+      }
+    }
+
+    // Sort by priority desc, then by recency (more recent eligibility wins)
+    // Tuned behavior constants (not user-configurable)
+    const minDwellMs = 10000;
+    const debounceMs = 2000;
+    const allowInterrupt = true;
+
+    const nowEligible = candidates.map(c => {
+      const lastEligibleAt = this.intelState.lastEligibleAtById[c.id] || 0;
+      const firstSeenAt = lastEligibleAt === 0 ? now : lastEligibleAt;
+      return { ...c, firstSeenAt };
+    });
+
+    // Update eligibility timestamps
+    for (let c of nowEligible) {
+      this.intelState.lastEligibleAtById[c.id] = now;
+    }
+
+    nowEligible.sort((a, b) => {
+      if (a.priority !== b.priority) return b.priority - a.priority;
+      return b.firstSeenAt - a.firstSeenAt;
+    });
+
+    const currentId = this.intelState.currentId;
+    const currentPriority = this.intelState.currentPriority;
+    const lastChangeAt = this.intelState.lastChangeAt || 0;
+
+    // Decide winner
+    let winner = null;
+    if (nowEligible.length > 0) {
+      winner = nowEligible[0];
+    }
+
+    if (!winner) {
+      // Nothing eligible → clear current after dwell
+      if (currentId && (now - lastChangeAt) >= minDwellMs) {
+        this.intelState.currentId = null;
+        this.intelState.currentPriority = -1;
+        this.intelState.lastChangeAt = now;
+      }
+      return;
+    }
+
+    const isDifferent = winner.id !== currentId;
+    const higherPriority = winner.priority > (currentPriority || -1);
+    const dwellSatisfied = (now - lastChangeAt) >= minDwellMs;
+    const debounceSatisfied = (now - winner.firstSeenAt) >= debounceMs;
+
+    if (!currentId) {
+      if (debounceSatisfied) {
+        this.intelState.currentId = winner.id;
+        this.intelState.currentPriority = winner.priority;
+        this.intelState.lastChangeAt = now;
+      }
+      return;
+    }
+
+    if (isDifferent) {
+      if ((higherPriority && allowInterrupt && debounceSatisfied) || (dwellSatisfied && debounceSatisfied)) {
+        this.intelState.currentId = winner.id;
+        this.intelState.currentPriority = winner.priority;
+        this.intelState.lastChangeAt = now;
+      }
+    } else {
+      // Same message continues; nothing to do
+    }
   },
 
   generateTableDom: function (wrapper, data) {
@@ -465,7 +630,32 @@ Module.register("MMM-Tessie", {
       const ampm = hrs >= 12 ? 'PM' : 'AM';
       hrs = hrs % 12; if (hrs === 0) hrs = 12;
       const mm = (mins < 10 ? '0' : '') + mins;
-      return `Charge starts at ${hrs}:${mm}${ampm}`;
+      return `${hrs}:${mm}${ampm}`;
+    };
+    const renderIntelligence = () => {
+      const topLevelEnabled = (this.config.intelligence !== false);
+      if (!topLevelEnabled) return '';
+      const id = this.intelState && this.intelState.currentId;
+      if (!id) return '';
+      // Recompute winner's text via same mapping used in updateIntelligenceDecision
+      let text = '';
+      if (id === 'tempHot') {
+        const c = this.config.imperial ? ((inside_temp - 32) * 5 / 9) : inside_temp;
+        const disp = this.config.imperial ? `${Math.round(inside_temp)}°` : `${Math.round(c)}°`;
+        text = `Cabin hot (${disp})`;
+      } else if (id === 'tempCold') {
+        const c = this.config.imperial ? ((inside_temp - 32) * 5 / 9) : inside_temp;
+        const disp = this.config.imperial ? `${Math.round(inside_temp)}°` : `${Math.round(c)}°`;
+        text = `Cabin cold (${disp})`;
+      } else if (id === 'chargingEta') {
+        text = formatRemainingShort(timeToFull);
+      } else if (id === 'chargeScheduled') {
+        text = `Charge starts at ${formatChargeStartLocal(chargeStart)}`;
+      }
+      if (!text) return '';
+      return `<div class=\"intel-section\" style=\"text-align:center; margin-top: 8px;\">` +
+             `<div class=\"normal small\">${text}</div>` +
+             `</div>`;
     };
     const batteryUnit = this.config.rangeDisplay === "%" ? "%" : (this.config.imperial ? "mi" : "km");
 
@@ -531,7 +721,7 @@ Module.register("MMM-Tessie", {
                       width: ${layWidth}px; 
                       height: 70px">
             <span class="bright large light">${batteryBigNumber}</span><span class="normal medium">${batteryUnit}</span>
-            ${charging ? `<div class=\"normal small\" style=\"margin-top: 4px;\">${formatRemainingShort(timeToFull)}</div>` : ((pluggedIn && chargeStart && chargeStart !== '') ? `<div class=\"normal small\" style=\"margin-top: 4px;\">${formatChargeStartLocal(chargeStart)}</div>` : '')}
+            ${charging ? `<div class=\"normal small\" style=\"margin-top: 4px;\">${formatRemainingShort(timeToFull)}</div>` : ''}
           </div>
 
           <!-- State icons -->
@@ -553,6 +743,7 @@ Module.register("MMM-Tessie", {
           </div>
 
           ${batteryBarHtml}
+          ${renderIntelligence()}
 
           <!-- Optional graphic mode icons below the car -->
           <div style="text-align: center; 
@@ -607,7 +798,31 @@ Module.register("MMM-Tessie", {
       const ampm = hrs >= 12 ? 'PM' : 'AM';
       hrs = hrs % 12; if (hrs === 0) hrs = 12;
       const mm = (mins < 10 ? '0' : '') + mins;
-      return `Charge starts at ${hrs}:${mm}${ampm}`;
+      return `${hrs}:${mm}${ampm}`;
+    };
+    const renderIntelligence = () => {
+      const topLevelEnabled = (this.config.intelligence !== false);
+      if (!topLevelEnabled) return '';
+      const id = this.intelState && this.intelState.currentId;
+      if (!id) return '';
+      let text = '';
+      if (id === 'tempHot') {
+        const c = this.config.imperial ? ((data.inside_temp - 32) * 5 / 9) : data.inside_temp;
+        const disp = this.config.imperial ? `${Math.round(data.inside_temp)}°` : `${Math.round(c)}°`;
+        text = `Cabin hot (${disp})`;
+      } else if (id === 'tempCold') {
+        const c = this.config.imperial ? ((data.inside_temp - 32) * 5 / 9) : data.inside_temp;
+        const disp = this.config.imperial ? `${Math.round(data.inside_temp)}°` : `${Math.round(c)}°`;
+        text = `Cabin cold (${disp})`;
+      } else if (id === 'chargingEta') {
+        text = formatRemainingShort(this.subscriptions["charge_time"].value);
+      } else if (id === 'chargeScheduled') {
+        text = `Charge starts at ${formatChargeStartLocal(this.subscriptions["charge_start"].value)}`;
+      }
+      if (!text) return '';
+      return `<div class=\"intel-section\" style=\"text-align:left; margin-top: 8px;\">` +
+             `<div class=\"normal small\">${text}</div>` +
+             `</div>`;
     };
 
     const stateIcons = [];
@@ -674,8 +889,9 @@ Module.register("MMM-Tessie", {
             <div class=\"left-content\" style=\"position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; justify-content: space-between;\">
               <div class=\"icons\" style=\"display:flex; gap: 6px; align-items:center;\">${renderedStateIcons.join(' ')} ${renderedNetworkIcons.join(' ')} </div>
               <div class=\"battery-row\" style=\"display:flex; flex-direction: column; align-items: flex-start;\">
-                <div class=\"percent\" style=\"margin-bottom: 4px;\"><span class=\"bright medium light\">${batteryBigNumber}</span><span class=\"normal small\">${batteryUnit}</span>${(pluggedIn && (this.subscriptions["charge_time"].value > 0.0)) ? `<div class=\\"normal small\\" style=\\"margin-top: 2px;\\">${formatRemainingShort(this.subscriptions["charge_time"].value)}</div>` : ((pluggedIn && (this.subscriptions["charge_time"].value <= 0.0) && (this.subscriptions["charge_start"].value && this.subscriptions["charge_start"].value !== '')) ? `<div class=\\"normal small\\" style=\\"margin-top: 2px;\\">${formatChargeStartLocal(this.subscriptions["charge_start"].value)}</div>` : '')}</div>
+                <div class=\"percent\" style=\"margin-bottom: 4px;\"><span class=\"bright medium light\">${batteryBigNumber}</span><span class=\"normal small\">${batteryUnit}</span>${(pluggedIn && (this.subscriptions["charge_time"].value > 0.0)) ? `<div class=\\"normal small\\" style=\\"margin-top: 2px;\\">${formatRemainingShort(this.subscriptions["charge_time"].value)}</div>` : ''}</div>
                 ${batteryHtml}
+                ${renderIntelligence()}
               </div>
             </div>
           </div>
