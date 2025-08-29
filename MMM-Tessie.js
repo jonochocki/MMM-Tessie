@@ -1156,26 +1156,27 @@ Module.register("MMM-Tessie", {
 
     // Full-width vertical gradient battery with threshold and large percentage
     const renderBatteryWide = () => {
-      const barLeftRightPad = 18;
-      const barBottomPad = 16;
+      // Bottom row has 18px horizontal padding; compute inner usable width for precise threshold placement
+      const sectionPad = 18;
       // Reduced height so the threshold line appears less tall
       const barHeight = Math.max(64, Math.round(smartHeight * 0.28));
-      const barWidth = smartWidth - (barLeftRightPad * 2);
+      const barWidth = smartWidth - (sectionPad * 2);
       const levelPct = Math.max(0, Math.min(100, Number(batteryUsable)));
       const fillWidthPx = Math.round(barWidth * (levelPct / 100));
       const thresholdVisible = (typeof chargeLimitSOC === 'number' && chargeLimitSOC > 0 && chargeLimitSOC < 100);
-      const thresholdLeftPx = Math.round(barLeftRightPad + (barWidth * (Math.max(0, Math.min(100, Number(chargeLimitSOC))) / 100)));
+      const thresholdLeftPx = Math.round(barWidth * (Math.max(0, Math.min(100, Number(chargeLimitSOC))) / 100));
       const percentText = `${Math.round(levelPct)}%`;
       const largeFontPx = Math.max(40, Math.round(smartHeight * 0.24));
       return `
         <div class="smart-battery-wide" style="
-          position:absolute; left:${barLeftRightPad}px; right:${barLeftRightPad}px; bottom:${barBottomPad}px;
-          height:${barHeight}px; z-index:4;
+          position:relative; width:100%; height:${barHeight}px; z-index:3;
+          background: linear-gradient(to top, rgba(0,0,0,0.18), rgba(0,0,0,0));
+          border-radius: 12px; overflow:hidden;
         ">
           <div class="smart-battery-fill" style="
             position:absolute; left:0; bottom:0; height:${barHeight}px; width:${fillWidthPx}px;
             background: linear-gradient(to top, rgba(48,209,88,0.95) 0%, rgba(48,209,88,0.75) 28%, rgba(48,209,88,0.0) 100%);
-            border-radius: 10px; filter: drop-shadow(0 8px 22px rgba(48,209,88,0.25));
+            border-radius: 12px 10px 0 0; filter: drop-shadow(0 8px 22px rgba(48,209,88,0.25));
           "></div>
           <div class="smart-battery-threshold" style="
             position:absolute; top:0; bottom:0; left:${thresholdLeftPx}px;
@@ -1348,62 +1349,33 @@ Module.register("MMM-Tessie", {
         --accent-rgb: ${accent.rgb};
       ">
         <link href="https://cdn.materialdesignicons.com/7.4.47/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
-        
-        <!-- Dynamic animated gradient backdrop -->
-        <div class="smart-gradient-anim" style="
-          position:absolute; 
-          left:50%; top:40%; 
-          transform: translate(-50%,-50%); 
-          z-index:1; 
-          width: ${Math.round(smartWidth * 1.3)}px;
-          height: ${Math.round(smartHeight * 0.9)}px;
-          filter: blur(35px) saturate(140%);
-          background: 
-            radial-gradient(ellipse 100% 80% at 50% 50%, 
-              rgba(var(--accent-rgb),0.8), 
-              rgba(var(--accent-rgb),0.5) 40%, 
-              rgba(var(--accent-rgb),0.2) 70%,
-              transparent 85%);
-          animation: smartBreath 8s ease-in-out infinite;
-          opacity: 1.0;
-        "></div>
-        
-        <!-- Centered car overlay (positioned higher and left) -->
-        <div class="smart-car-overlay" style="
-          position:absolute; 
-          left:40%; top:32%; 
-          transform: translate(-50%,-50%); 
-          z-index:2; opacity: 0.42;
-          width:${Math.round(smartWidth * 0.75)}px; 
-          height:${Math.round(smartWidth * 0.48)}px; 
-          background-image: url('${teslaImageUrl}'); 
-          background-repeat:no-repeat;
-          background-position:center center; 
-          background-size: contain; 
-          pointer-events:none;
-        "></div>
-        
-        <!-- Content layer with proper spacing for gauge -->
-        <div class="smart-content" style="
-          position: relative; z-index: 3; 
-          padding: 18px 18px 20px 18px;
-          min-height: ${smartHeight}px;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-        ">
-          <div class="smart-top" style="min-height: ${smartStageHeight}px;"></div>
-          <div class="smart-middle">
-            ${renderHeroChip()}
+        <div class="smart-layout" style="display:flex; flex-direction:column; gap:12px;">
+          <!-- Top row: background gradient + car image -->
+          <div class="smart-row smart-top" style="position:relative; height:${smartStageHeight}px; overflow:hidden;">
+            <div class="smart-gradient-anim" style="
+              position:absolute; left:50%; top:50%; transform: translate(-50%,-50%);
+              z-index:1; width: ${Math.round(smartWidth * 1.3)}px; height: ${Math.round(smartStageHeight * 1.4)}px;
+              filter: blur(35px) saturate(140%);
+              background: radial-gradient(ellipse 100% 80% at 50% 50%, rgba(var(--accent-rgb),0.8), rgba(var(--accent-rgb),0.5) 40%, rgba(var(--accent-rgb),0.2) 70%, transparent 85%);
+              animation: smartBreath 8s ease-in-out infinite; opacity: 1.0;
+            "></div>
+            <div class="smart-car-overlay" style="
+              position:absolute; left:50%; top:60%; transform: translate(-50%,-50%); z-index:2; opacity: 0.42;
+              width:${Math.round(smartWidth * 0.75)}px; height:${Math.round(smartWidth * 0.48)}px; 
+              background-image: url('${teslaImageUrl}'); background-repeat:no-repeat; background-position:center center; background-size: contain; pointer-events:none;
+            "></div>
           </div>
-          <div class="smart-bottom">
+          <!-- Middle row: hero + chips + status -->
+          <div class="smart-row smart-middle" style="padding: 0 18px; position:relative; z-index:3;">
+            ${renderHeroChip()}
             ${renderIntelChips()}
             ${renderSmartStatus()}
           </div>
+          <!-- Bottom row: full-width battery -->
+          <div class="smart-row smart-bottom" style="padding: 0 18px 12px 18px; position:relative; z-index:3;">
+            ${renderBatteryWide()}
+          </div>
         </div>
-        
-        <!-- Full-width gradient battery at bottom -->
-        ${renderBatteryWide()}
       </div>
       
       <style>
