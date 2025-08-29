@@ -1154,48 +1154,6 @@ Module.register("MMM-Tessie", {
       `;
     };
 
-    // Full-width vertical gradient battery with threshold and large percentage
-    const renderBatteryWide = () => {
-      // Bottom row has 18px horizontal padding; compute inner usable width for precise threshold placement
-      const sectionPad = 18;
-      // Reduced height so the threshold line appears less tall
-      const barHeight = Math.max(64, Math.round(smartHeight * 0.28));
-      const barWidth = smartWidth - (sectionPad * 2);
-      const levelPct = Math.max(0, Math.min(100, Number(batteryUsable)));
-      const fillWidthPx = Math.round(barWidth * (levelPct / 100));
-      const thresholdVisible = (typeof chargeLimitSOC === 'number' && chargeLimitSOC > 0 && chargeLimitSOC < 100);
-      const thresholdLeftPx = Math.round(barWidth * (Math.max(0, Math.min(100, Number(chargeLimitSOC))) / 100));
-      const percentText = `${Math.round(levelPct)}%`;
-      const largeFontPx = Math.max(40, Math.round(smartHeight * 0.24));
-      return `
-        <div class="smart-battery-wide" style="
-          position:relative; width:100%; height:${barHeight}px; z-index:3;
-          background: linear-gradient(to top, rgba(0,0,0,0.18), rgba(0,0,0,0));
-          border-radius: 12px; overflow:hidden;
-        ">
-          <div class="smart-battery-fill" style="
-            position:absolute; left:0; bottom:0; height:${barHeight}px; width:${fillWidthPx}px;
-            background: linear-gradient(to top, rgba(48,209,88,0.95) 0%, rgba(48,209,88,0.75) 28%, rgba(48,209,88,0.0) 100%);
-            border-radius: 12px 10px 0 0; filter: drop-shadow(0 8px 22px rgba(48,209,88,0.25));
-          "></div>
-          <div class="smart-battery-threshold" style="
-            position:absolute; top:0; bottom:0; left:${thresholdLeftPx}px;
-            border-left:2px dotted rgba(255,255,255,0.55);
-            ${thresholdVisible ? '' : 'visibility:hidden;'}
-          "></div>
-          <div class="smart-battery-threshold-label" style="
-            position:absolute; left:${thresholdLeftPx}px; transform: translateX(-50%);
-            top:-16px; font-size:12px; color:rgba(255,255,255,0.7);
-            ${thresholdVisible ? '' : 'visibility:hidden;'}
-          ">${Math.round(Number(chargeLimitSOC) || 0)}</div>
-          <div class="smart-battery-percent" style="
-            position:absolute; right:0; bottom:-6px; color:#ffffff; font-weight:800;
-            font-size:${largeFontPx}px; line-height:1; text-shadow: 0 4px 18px rgba(0,0,0,0.45);
-          ">${percentText}</div>
-        </div>
-      `;
-    };
-
     // Simple pill-style battery indicator (replaces semicircle gauge)
     const renderBatteryPill = () => {
       const levelClass = (batteryUsable <= 20) ? 'critical' : (batteryUsable <= 50 ? 'warning' : 'normal');
@@ -1216,6 +1174,29 @@ Module.register("MMM-Tessie", {
           <span class="mdi ${icon}" style="font-size:14px; color:${color};"></span>
           <span style="font-size:13px; font-weight:700; color:${color};">${pillText}</span>
         </div>`;
+    };
+
+    // Full-width smart battery progress bar with limit break marker
+    const renderBatteryBar = () => {
+      if (this.config.displayOptions?.batteryBar?.visible === false) return '';
+      const barWidth = Math.max(120, smartWidth - 36);
+      const barHeight = 28;
+      const clampedUsable = Math.max(0, Math.min(100, batteryUsable));
+      const clampedLimit = Math.max(0, Math.min(100, chargeLimitSOC || 0));
+      const usablePx = Math.round(barWidth * (clampedUsable / 100));
+      const limitLeftPx = Math.round(barWidth * (clampedLimit / 100));
+      const level = (clampedUsable <= 20) ? 'low' : (clampedUsable <= 50 ? 'med' : 'high');
+      const showLimit = clampedLimit > 0 && clampedLimit < 100;
+      const valueText = this.config.rangeDisplay === '%' ? `${batteryBigNumber}${batteryUnit}` : `${batteryBigNumber}${batteryUnit}`;
+      return `
+        <div class="smart-battery" role="img" aria-label="Battery ${clampedUsable} percent" style="width:${barWidth}px; height:${barHeight}px;">
+          <div class="smart-battery-fill ${level} ${charging ? 'charging' : ''}" style="width:${usablePx}px;"></div>
+          ${showLimit ? `
+            <div class=\"smart-battery-limit\" style=\"left:${limitLeftPx}px;\">${clampedLimit}</div>
+          ` : ''}
+          <div class="smart-battery-value">${valueText}</div>
+        </div>
+      `;
     };
 
     // Quick status indicators (exclude plugged in since it's redundant)
@@ -1349,33 +1330,62 @@ Module.register("MMM-Tessie", {
         --accent-rgb: ${accent.rgb};
       ">
         <link href="https://cdn.materialdesignicons.com/7.4.47/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
-        <div class="smart-layout" style="display:flex; flex-direction:column; gap:12px;">
-          <!-- Top row: background gradient + car image -->
-          <div class="smart-row smart-top" style="position:relative; height:${smartStageHeight}px; overflow:hidden;">
-            <div class="smart-gradient-anim" style="
-              position:absolute; left:50%; top:50%; transform: translate(-50%,-50%);
-              z-index:1; width: ${Math.round(smartWidth * 1.3)}px; height: ${Math.round(smartStageHeight * 1.4)}px;
-              filter: blur(35px) saturate(140%);
-              background: radial-gradient(ellipse 100% 80% at 50% 50%, rgba(var(--accent-rgb),0.8), rgba(var(--accent-rgb),0.5) 40%, rgba(var(--accent-rgb),0.2) 70%, transparent 85%);
-              animation: smartBreath 8s ease-in-out infinite; opacity: 1.0;
-            "></div>
-            <div class="smart-car-overlay" style="
-              position:absolute; left:50%; top:60%; transform: translate(-50%,-50%); z-index:2; opacity: 0.42;
-              width:${Math.round(smartWidth * 0.75)}px; height:${Math.round(smartWidth * 0.48)}px; 
-              background-image: url('${teslaImageUrl}'); background-repeat:no-repeat; background-position:center center; background-size: contain; pointer-events:none;
-            "></div>
-          </div>
-          <!-- Middle row: hero + chips + status -->
-          <div class="smart-row smart-middle" style="padding: 0 18px; position:relative; z-index:3;">
+        
+        <!-- Dynamic animated gradient backdrop -->
+        <div class="smart-gradient-anim" style="
+          position:absolute; 
+          left:50%; top:40%; 
+          transform: translate(-50%,-50%); 
+          z-index:1; 
+          width: ${Math.round(smartWidth * 1.3)}px;
+          height: ${Math.round(smartHeight * 0.9)}px;
+          filter: blur(35px) saturate(140%);
+          background: 
+            radial-gradient(ellipse 100% 80% at 50% 50%, 
+              rgba(var(--accent-rgb),0.8), 
+              rgba(var(--accent-rgb),0.5) 40%, 
+              rgba(var(--accent-rgb),0.2) 70%,
+              transparent 85%);
+          animation: smartBreath 8s ease-in-out infinite;
+          opacity: 1.0;
+        "></div>
+        
+        <!-- Centered car overlay (positioned higher and left) -->
+        <div class="smart-car-overlay" style="
+          position:absolute; 
+          left:40%; top:32%; 
+          transform: translate(-50%,-50%); 
+          z-index:2; opacity: 0.42;
+          width:${Math.round(smartWidth * 0.75)}px; 
+          height:${Math.round(smartWidth * 0.48)}px; 
+          background-image: url('${teslaImageUrl}'); 
+          background-repeat:no-repeat;
+          background-position:center center; 
+          background-size: contain; 
+          pointer-events:none;
+        "></div>
+        
+        <!-- Content layer with proper spacing for gauge -->
+        <div class="smart-content" style="
+          position: relative; z-index: 3; 
+          padding: 18px 18px 20px 18px;
+          min-height: ${smartHeight}px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+        ">
+          <div class="smart-top" style="min-height: ${smartStageHeight}px;"></div>
+          <div class="smart-middle">
+            ${renderBatteryBar()}
             ${renderHeroChip()}
+          </div>
+          <div class="smart-bottom">
             ${renderIntelChips()}
             ${renderSmartStatus()}
           </div>
-          <!-- Bottom row: full-width battery -->
-          <div class="smart-row smart-bottom" style="padding: 0 18px 12px 18px; position:relative; z-index:3;">
-            ${renderBatteryWide()}
-          </div>
         </div>
+        
+        <!-- Battery pill removed in favor of full-width progress bar -->
       </div>
       
       <style>
@@ -1410,6 +1420,46 @@ Module.register("MMM-Tessie", {
           100% { stroke-dashoffset: 20; }
         }
         .smart-mode * { box-sizing: border-box; }
+        .smart-battery {
+          position: relative;
+          margin: 6px 0 12px 0;
+          border-radius: 9999px;
+          background: linear-gradient(to bottom, rgba(255,255,255,0.10), rgba(255,255,255,0.04));
+          border: 1px solid rgba(255,255,255,0.22);
+          overflow: hidden;
+        }
+        .smart-battery-fill {
+          position:absolute; top:0; left:0; bottom:0;
+          background-image: linear-gradient(90deg, #30D158, #22C04E 60%, #159E3F);
+          box-shadow: inset 0 0 8px rgba(255,255,255,0.06);
+          transition: width 400ms cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .smart-battery-fill.low { background-image: linear-gradient(90deg, #FF453A, #FF3B30); }
+        .smart-battery-fill.med { background-image: linear-gradient(90deg, #FF9F0A, #FF8C00); }
+        .smart-battery-fill.charging {
+          background-size: 200% 100%;
+          background-image: linear-gradient(90deg, rgba(48,209,88,0.95) 25%, rgba(48,209,88,0.65) 50%, rgba(48,209,88,0.95) 75%);
+          animation: smartChargingShimmer 2.2s linear infinite;
+        }
+        .smart-battery-limit {
+          position:absolute; top:50%; transform: translate(-50%, -50%);
+          height: 72%; min-width: 26px; padding: 0 6px;
+          display:flex; align-items:center; justify-content:center;
+          background: rgba(0,0,0,0.6);
+          border: 1px dashed rgba(255,255,255,0.6);
+          color: rgba(255,255,255,0.95);
+          font-size: 11px; font-weight: 800; letter-spacing: 0.2px;
+          border-radius: 6px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+          pointer-events: none;
+        }
+        .smart-battery-value {
+          position:absolute; right:10px; top:50%; transform: translateY(-50%);
+          color: rgba(255,255,255,0.95);
+          font-weight: 800; font-size: 14px;
+          text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+          mix-blend-mode: normal;
+        }
       </style>
     `;
   }
