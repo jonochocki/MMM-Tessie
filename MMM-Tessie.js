@@ -1158,21 +1158,22 @@ Module.register("MMM-Tessie", {
     const renderBatteryWide = () => {
       const barLeftRightPad = 18;
       const barBottomPad = 16;
-      const barHeight = Math.max(90, Math.round(smartHeight * 0.36));
+      // Reduced height so the threshold line appears less tall
+      const barHeight = Math.max(64, Math.round(smartHeight * 0.28));
       const barWidth = smartWidth - (barLeftRightPad * 2);
       const levelPct = Math.max(0, Math.min(100, Number(batteryUsable)));
-      const fillHeightPx = Math.round(barHeight * (levelPct / 100));
+      const fillWidthPx = Math.round(barWidth * (levelPct / 100));
       const thresholdVisible = (typeof chargeLimitSOC === 'number' && chargeLimitSOC > 0 && chargeLimitSOC < 100);
       const thresholdLeftPx = Math.round(barLeftRightPad + (barWidth * (Math.max(0, Math.min(100, Number(chargeLimitSOC))) / 100)));
       const percentText = `${Math.round(levelPct)}%`;
-      const largeFontPx = Math.max(42, Math.round(smartHeight * 0.26));
+      const largeFontPx = Math.max(40, Math.round(smartHeight * 0.24));
       return `
         <div class="smart-battery-wide" style="
           position:absolute; left:${barLeftRightPad}px; right:${barLeftRightPad}px; bottom:${barBottomPad}px;
           height:${barHeight}px; z-index:4;
         ">
           <div class="smart-battery-fill" style="
-            position:absolute; left:0; right:0; bottom:0; height:${fillHeightPx}px;
+            position:absolute; left:0; bottom:0; height:${barHeight}px; width:${fillWidthPx}px;
             background: linear-gradient(to top, rgba(48,209,88,0.95) 0%, rgba(48,209,88,0.75) 28%, rgba(48,209,88,0.0) 100%);
             border-radius: 10px; filter: drop-shadow(0 8px 22px rgba(48,209,88,0.25));
           "></div>
