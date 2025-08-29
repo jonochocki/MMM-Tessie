@@ -723,7 +723,7 @@ Module.register("MMM-Tessie", {
                       text-align: center; 
                       width: ${layWidth}px; 
                       height: 70px">
-            <span class="bright large light">${this.config.showChargeLimit && this.config.rangeDisplay === "%" && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100 ? `${batteryBigNumber}<span style="font-size: 0.6em; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>` : batteryBigNumber}</span><span class="normal medium">${batteryUnit}</span>
+            <span class="bright large light">${batteryBigNumber}</span><span class="normal medium">${batteryUnit}</span>${this.config.showChargeLimit && this.config.rangeDisplay === "%" && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100 ? `<span style="font-size: 0.6em; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>` : ''}
             ${charging ? `<div class=\"normal small\" style=\"margin-top: 4px;\">${formatRemainingShort(timeToFull)}</div>` : ''}
           </div>
 
@@ -892,7 +892,7 @@ Module.register("MMM-Tessie", {
             <div class=\"left-content\" style=\"position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; justify-content: space-between;\">
               <div class=\"icons\" style=\"display:flex; gap: 6px; align-items:center;\">${renderedStateIcons.join(' ')} ${renderedNetworkIcons.join(' ')} </div>
               <div class=\"battery-row\" style=\"display:flex; flex-direction: column; align-items: flex-start;\">
-                <div class=\"percent\" style=\"margin-bottom: 4px;\"><span class=\"bright medium light\">${this.config.showChargeLimit && this.config.rangeDisplay === "%" && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100 ? `${batteryBigNumber}<span style=\"font-size: 0.6em; color: rgba(255,255,255,0.6); vertical-align: super;\">/${chargeLimitSOC}</span>` : batteryBigNumber}</span><span class=\"normal small\">${batteryUnit}</span>${(pluggedIn && (this.subscriptions["charge_time"].value > 0.0)) ? `<div class=\\"normal small\\" style=\\"margin-top: 2px;\\">${formatRemainingShort(this.subscriptions["charge_time"].value)}</div>` : ''}</div>
+                <div class=\"percent\" style=\"margin-bottom: 4px;\"><span class=\"bright medium light\">${batteryBigNumber}</span><span class=\"normal small\">${batteryUnit}</span>${this.config.showChargeLimit && this.config.rangeDisplay === "%" && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100 ? `<span style=\"font-size: 0.6em; color: rgba(255,255,255,0.6); vertical-align: super;\">/${chargeLimitSOC}</span>` : ''}${(pluggedIn && (this.subscriptions["charge_time"].value > 0.0)) ? `<div class=\\"normal small\\" style=\\"margin-top: 2px;\\">${formatRemainingShort(this.subscriptions["charge_time"].value)}</div>` : ''}</div>
                 ${batteryHtml}
                 ${renderIntelligence()}
               </div>
@@ -969,7 +969,7 @@ Module.register("MMM-Tessie", {
     const percentageOverlay = showPercentage ? `
       <div class="percentage-overlay" style="position:absolute; bottom:-28px; left:50%; transform:translateX(-50%); z-index:5; text-align:center;">
         <div class="percentage-text" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); border-radius: 9999px; padding: 4px 10px; display:inline-block;">
-          <span class="bright medium light">${this.config.showChargeLimit && this.config.rangeDisplay === "%" && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100 ? `${batteryBigNumber}<span style="font-size: 0.6em; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>` : batteryBigNumber}</span><span class="normal small">${batteryUnit}</span>
+          <span class="bright medium light">${batteryBigNumber}</span><span class="normal small">${batteryUnit}</span>${this.config.showChargeLimit && this.config.rangeDisplay === "%" && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100 ? `<span style="font-size: 0.6em; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>` : ''}
         </div>
       </div>` : '';
 
@@ -1138,7 +1138,7 @@ Module.register("MMM-Tessie", {
       // Format battery display with optional charge limit
       const formatBatteryDisplay = () => {
         if (this.config.showChargeLimit && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100) {
-          return `${batteryBigNumber}<span style="font-size: 11px; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>${batteryUnit}`;
+          return `${batteryBigNumber}${batteryUnit}<span style="font-size: 11px; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>`;
         }
         return `${batteryBigNumber}${batteryUnit}`;
       };
@@ -1149,8 +1149,8 @@ Module.register("MMM-Tessie", {
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           border: 1px solid rgba(255, 255, 255, 0.12);
-          border-radius: 12px;
-          padding: 12px 14px;
+          border-radius: 9999px;
+          padding: 12px 16px;
           margin-bottom: 8px;
           display: flex; align-items: center; gap: 12px;
         ">
@@ -1319,12 +1319,12 @@ Module.register("MMM-Tessie", {
           height: ${Math.round(smartHeight * 0.7)}px;
           filter: blur(42px) saturate(110%);
           background: radial-gradient(ellipse 85% 70% at center, 
-            rgba(var(--accent-rgb),0.32), 
-            rgba(var(--accent-rgb),0.18) 40%, 
-            rgba(var(--accent-rgb),0.08) 60%,
+            rgba(var(--accent-rgb),0.55), 
+            rgba(var(--accent-rgb),0.35) 40%, 
+            rgba(var(--accent-rgb),0.18) 60%,
             transparent 80%);
           animation: smartPulse 8s ease-in-out infinite alternate;
-          opacity: 0.9;
+          opacity: 0.95;
         "></div>
         
         <!-- Centered car overlay (positioned higher) -->
