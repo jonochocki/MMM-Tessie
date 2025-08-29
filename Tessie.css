@@ -90,28 +90,30 @@
   height: 100%;
   background: linear-gradient(180deg, rgba(255,255,255,0.35), rgba(255,255,255,0.05)) , #2dd24a;
   transition: width 200ms ease;
-  overflow: hidden; /* ensure charging sweep is clipped to current fill */
 }
 
-/* Charging pulse: single sweeping line */
+/* Charging pulse: subtle brightness sweep within fill area */
 .battery.ios26.battery--charging .battery-fill::after {
   content: "";
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 8px;
+  inset: 0;
   pointer-events: none;
-  background: linear-gradient(90deg, rgba(45,210,74,0.0) 0%, rgba(45,210,74,0.7) 50%, rgba(45,210,74,0.0) 100%);
-  box-shadow: 0 0 6px rgba(45,210,74,0.45);
-  transform: translateX(-100%);
-  animation: batteryChargingSweep 1.8s ease-in-out infinite;
-  will-change: transform;
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.0) 0%,
+    rgba(255,255,255,0.0) 30%,
+    rgba(255,255,255,0.25) 50%,
+    rgba(255,255,255,0.0) 70%,
+    rgba(255,255,255,0.0) 100%
+  );
+  background-size: 200% 100%;
+  animation: batteryChargingGlow 2s ease-in-out infinite;
+  will-change: background-position;
 }
 
-@keyframes batteryChargingSweep {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+@keyframes batteryChargingGlow {
+  0% { background-position: -100% 0; }
+  100% { background-position: 100% 0; }
 }
 
 .battery.ios26.battery--medium .battery-fill {
