@@ -1242,15 +1242,18 @@ Module.register("MMM-Tessie", {
       // Temperature warning chip (only if not already hero)
       if (enabled.temperature !== false && inside_temp != null && currentId !== 'tempHot' && currentId !== 'tempCold') {
         const unitIsF = !!this.config.imperial;
-        const t = parseFloat(inside_temp);
+        const tDisplay = parseFloat(inside_temp); // For display
+        const tC = unitIsF ? ((tDisplay - 32) * 5 / 9) : tDisplay; // Convert to Celsius for comparison
         const thresholdsUser = (enabled.tempThresholds || {});
-        const hotUser = (typeof thresholdsUser.cabinHot === 'number' ? thresholdsUser.cabinHot : (unitIsF ? 90 : 32));
-        const coldUser = (typeof thresholdsUser.cabinCold === 'number' ? thresholdsUser.cabinCold : (unitIsF ? 40 : 4));
+        const hotUserThreshold = (typeof thresholdsUser.cabinHot === 'number' ? thresholdsUser.cabinHot : (unitIsF ? 90 : 32));
+        const coldUserThreshold = (typeof thresholdsUser.cabinCold === 'number' ? thresholdsUser.cabinCold : (unitIsF ? 40 : 4));
+        const hotC = unitIsF ? ((hotUserThreshold - 32) * 5 / 9) : hotUserThreshold;
+        const coldC = unitIsF ? ((coldUserThreshold - 32) * 5 / 9) : coldUserThreshold;
         
-        if (t >= hotUser) {
-          chips.push({ icon: 'mdi-thermometer-alert', text: `Hot ${Math.round(t)}°`, priority: 1, warning: true });
-        } else if (t <= coldUser) {
-          chips.push({ icon: 'mdi-snowflake-alert', text: `Cold ${Math.round(t)}°`, priority: 1, warning: true });
+        if (tC >= hotC) {
+          chips.push({ icon: 'mdi-thermometer-alert', text: `Hot ${Math.round(tDisplay)}°`, priority: 1, warning: true });
+        } else if (tC <= coldC) {
+          chips.push({ icon: 'mdi-snowflake-alert', text: `Cold ${Math.round(tDisplay)}°`, priority: 1, warning: true });
         }
       }
       
