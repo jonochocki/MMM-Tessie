@@ -62,3 +62,6 @@ typings/
 
 # Visual Studio Code settings & co
 .vscode
+
+# macOS
+.DS_Store
