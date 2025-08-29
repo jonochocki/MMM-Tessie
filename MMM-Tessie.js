@@ -1023,6 +1023,8 @@ Module.register("MMM-Tessie", {
     const smartWidth = this.config.sizeOptions?.width ?? 420;
     const smartHeight = this.config.sizeOptions?.height ?? 300;
     const topOffset = this.config.sizeOptions?.topOffset ?? -20;
+    // Reserve vertical stage so content (chips) never overlaps the car image
+    const smartStageHeight = Math.round(Math.max(smartHeight * 0.45, smartWidth * 0.32));
     
     const batteryBigNumber = this.config.rangeDisplay === "%" ? batteryUsable : idealRange;
     const batteryUnit = this.config.rangeDisplay === "%" ? "%" : (this.config.imperial ? "mi" : "km");
@@ -1057,15 +1059,22 @@ Module.register("MMM-Tessie", {
       let heroIcon = '';
       let priority = 'normal';
 
-      if (id === 'tempHot') {
-        const c = this.config.imperial ? ((inside_temp - 32) * 5 / 9) : inside_temp;
-        const disp = this.config.imperial ? `${Math.round(inside_temp)}°` : `${Math.round(c)}°`;
+      // Determine hot/cold using user's configured units to avoid any mislabeling
+      const unitIsF = !!this.config.imperial;
+      const insideDisplay = parseFloat(inside_temp); // already in user's units
+      const thresholdsUser = (this.config.intelligenceOptions?.tempThresholds || {});
+      const hotUser = typeof thresholdsUser.cabinHot === 'number' ? thresholdsUser.cabinHot : (unitIsF ? 90 : 32);
+      const coldUser = typeof thresholdsUser.cabinCold === 'number' ? thresholdsUser.cabinCold : (unitIsF ? 40 : 4);
+      const isHotNow = insideDisplay >= hotUser;
+      const isColdNow = insideDisplay <= coldUser;
+
+      if (id === 'tempHot' || (id && id.startsWith('temp') && isHotNow)) {
+        const disp = `${Math.round(insideDisplay)}°`;
         heroContent = `Cabin high at ${disp}`;
         heroIcon = 'mdi-thermometer-alert';
         priority = 'critical';
-      } else if (id === 'tempCold') {
-        const c = this.config.imperial ? ((inside_temp - 32) * 5 / 9) : inside_temp;
-        const disp = this.config.imperial ? `${Math.round(inside_temp)}°` : `${Math.round(c)}°`;
+      } else if (id === 'tempCold' || (id && id.startsWith('temp') && isColdNow)) {
+        const disp = `${Math.round(insideDisplay)}°`;
         heroContent = `Cabin low at ${disp}`;
         heroIcon = 'mdi-snowflake-alert';
         priority = 'critical';
@@ -1140,89 +1149,26 @@ Module.register("MMM-Tessie", {
       `;
     };
 
-    // iOS/watchOS semicircle gauge positioned to right of car
-    const renderSemicircleBattery = () => {
+    // Simple pill-style battery indicator (replaces semicircle gauge)
+    const renderBatteryPill = () => {
       const levelClass = (batteryUsable <= 20) ? 'critical' : (batteryUsable <= 50 ? 'warning' : 'normal');
-      const levelColors = {
-        critical: '#FF453A',
-        warning: '#FF9F0A', 
-        normal: '#30D158'
-      };
-
-      const gaugeSize = 120;
-      const strokeWidth = 8;
-      const radius = (gaugeSize - strokeWidth) / 2;
-      const circumference = Math.PI * radius; // Half circle
-      const progress = (batteryUsable / 100) * circumference;
-      const remaining = circumference - progress;
-
-      // Format battery display with optional charge limit
-      const formatBatteryDisplay = () => {
-        if (this.config.showChargeLimit && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100) {
-          return `${batteryBigNumber}${batteryUnit}<span style="font-size: 10px; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>`;
-        }
-        return `${batteryBigNumber}${batteryUnit}`;
-      };
-
+      const levelColors = { critical: '#FF453A', warning: '#FF9F0A', normal: '#30D158' };
+      const color = levelColors[levelClass];
+      const pillText = this.config.showChargeLimit && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100
+        ? `${batteryBigNumber}${batteryUnit}/${chargeLimitSOC}`
+        : `${batteryBigNumber}${batteryUnit}`;
+      const icon = charging ? 'mdi-flash' : (levelClass === 'critical' ? 'mdi-battery-alert' : 'mdi-battery');
       return `
-        <div class="semicircle-gauge" style="
-          position: absolute;
-          right: 20px;
-          top: 35%;
-          transform: rotate(45deg);
-          width: ${gaugeSize}px;
-          height: ${gaugeSize/2 + 20}px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
+        <div class="battery-pill" style="
+          position:absolute; right: 18px; top: 58%; transform: translateY(-50%);
+          z-index:3; display:inline-flex; align-items:center; gap:8px;
+          padding: 8px 12px; border-radius:9999px;
+          background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25);
+          box-shadow: 0 2px 10px rgba(0,0,0,0.4);
         ">
-          <svg width="${gaugeSize}" height="${gaugeSize/2 + 10}" viewBox="0 0 ${gaugeSize} ${gaugeSize/2 + 10}" style="overflow: visible;">
-            <!-- Background arc -->
-            <path d="M ${strokeWidth/2} ${gaugeSize/2} A ${radius} ${radius} 0 0 1 ${gaugeSize - strokeWidth/2} ${gaugeSize/2}"
-                  fill="none" 
-                  stroke="rgba(255,255,255,0.25)" 
-                  stroke-width="${strokeWidth}"
-                  stroke-linecap="round"/>
-            <!-- Progress arc -->
-            <path d="M ${strokeWidth/2} ${gaugeSize/2} A ${radius} ${radius} 0 0 1 ${gaugeSize - strokeWidth/2} ${gaugeSize/2}"
-                  fill="none" 
-                  stroke="${levelColors[levelClass]}" 
-                  stroke-width="${strokeWidth}"
-                  stroke-linecap="round"
-                  stroke-dasharray="${progress} ${remaining}"
-                  style="
-                    filter: drop-shadow(0 0 12px ${levelColors[levelClass]}80);
-                    ${charging ? `
-                      stroke: url(#chargingGradient);
-                      animation: smartGaugeShimmer 2s ease-in-out infinite;
-                    ` : ''}
-                  "/>
-            ${charging ? `
-              <defs>
-                <linearGradient id="chargingGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" style="stop-color:${levelColors[levelClass]};stop-opacity:1" />
-                  <stop offset="50%" style="stop-color:rgba(255,255,255,0.9);stop-opacity:1" />
-                  <stop offset="100%" style="stop-color:${levelColors[levelClass]};stop-opacity:1" />
-                  <animateTransform attributeName="gradientTransform" type="translate"
-                    values="-100 0; 100 0; -100 0" dur="2s" repeatCount="indefinite"/>
-                </linearGradient>
-              </defs>
-            ` : ''}
-          </svg>
-          <div style="
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) rotate(-45deg);
-            font-size: 14px; font-weight: 800;
-            color: ${levelColors[levelClass]};
-            text-align: center;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.9);
-            filter: drop-shadow(0 0 8px ${levelColors[levelClass]}60);
-            white-space: nowrap;
-          ">${formatBatteryDisplay()}</div>
-        </div>
-      `;
+          <span class="mdi ${icon}" style="font-size:14px; color:${color};"></span>
+          <span style="font-size:13px; font-weight:700; color:${color};">${pillText}</span>
+        </div>`;
     };
 
     // Quick status indicators (exclude plugged in since it's redundant)
@@ -1394,15 +1340,13 @@ Module.register("MMM-Tessie", {
         <!-- Content layer with proper spacing for gauge -->
         <div class="smart-content" style="
           position: relative; z-index: 3; 
-          padding: 18px 140px 20px 18px;
+          padding: 18px 18px 20px 18px;
           min-height: ${smartHeight}px;
           display: flex;
           flex-direction: column;
           justify-content: space-between;
         ">
-          <div class="smart-top">
-            <!-- Empty top section for cleaner layout -->
-          </div>
+          <div class="smart-top" style="min-height: ${smartStageHeight}px;"></div>
           <div class="smart-middle">
             ${renderHeroChip()}
           </div>
@@ -1412,8 +1356,8 @@ Module.register("MMM-Tessie", {
           </div>
         </div>
         
-        <!-- Semicircle battery gauge positioned to curve around trunk -->
-        ${renderSemicircleBattery()}
+        <!-- Battery pill at right side -->
+        ${renderBatteryPill()}
       </div>
       
       <style>
