@@ -638,26 +638,28 @@ Module.register("MMM-Tessie", {
       const topLevelEnabled = (this.config.intelligence !== false);
       if (!topLevelEnabled) return '';
       const id = this.intelState && this.intelState.currentId;
-      if (!id) return '';
-      // Recompute winner's text via same mapping used in updateIntelligenceDecision
-      let text = '';
-      if (id === 'tempHot') {
-        const c = this.config.imperial ? ((inside_temp - 32) * 5 / 9) : inside_temp;
-        const disp = this.config.imperial ? `${Math.round(inside_temp)}°` : `${Math.round(c)}°`;
-        text = `Cabin hot (${disp})`;
-      } else if (id === 'tempCold') {
-        const c = this.config.imperial ? ((inside_temp - 32) * 5 / 9) : inside_temp;
-        const disp = this.config.imperial ? `${Math.round(inside_temp)}°` : `${Math.round(c)}°`;
-        text = `Cabin cold (${disp})`;
-      } else if (id === 'chargingEta') {
-        text = formatRemainingShort(timeToFull);
-      } else if (id === 'chargeScheduled') {
-        text = `Charge starts at ${formatChargeStartLocal(chargeStart)}`;
+      // Prefer explicit charging/schedule messages when active
+      if (id === 'chargingEta') {
+        return `<div class=\"intel-section\" style=\"text-align:center; margin-top: 8px;\"><div class=\"normal small\">${formatRemainingShort(timeToFull)}</div></div>`;
       }
-      if (!text) return '';
-      return `<div class=\"intel-section\" style=\"text-align:center; margin-top: 8px;\">` +
-             `<div class=\"normal small\">${text}</div>` +
-             `</div>`;
+      if (id === 'chargeScheduled') {
+        return `<div class=\"intel-section\" style=\"text-align:center; margin-top: 8px;\"><div class=\"normal small\">Charge starts at ${formatChargeStartLocal(chargeStart)}</div></div>`;
+      }
+      // Temperature messages: compute against user thresholds to avoid mislabeling
+      const unitIsF = !!this.config.imperial;
+      const tDisplay = inside_temp == null ? null : parseFloat(inside_temp);
+      if (tDisplay == null || isNaN(tDisplay)) return '';
+      const thresholdsUser = (this.config.intelligenceOptions?.tempThresholds || {});
+      const hotUser = typeof thresholdsUser.cabinHot === 'number' ? thresholdsUser.cabinHot : (unitIsF ? 90 : 32);
+      const coldUser = typeof thresholdsUser.cabinCold === 'number' ? thresholdsUser.cabinCold : (unitIsF ? 40 : 4);
+      const disp = `${Math.round(tDisplay)}°`;
+      if (tDisplay >= hotUser) {
+        return `<div class=\"intel-section\" style=\"text-align:center; margin-top: 8px;\"><div class=\"normal small\">Cabin hot (${disp})</div></div>`;
+      }
+      if (tDisplay <= coldUser) {
+        return `<div class=\"intel-section\" style=\"text-align:center; margin-top: 8px;\"><div class=\"normal small\">Cabin cold (${disp})</div></div>`;
+      }
+      return '';
     };
     const batteryUnit = this.config.rangeDisplay === "%" ? "%" : (this.config.imperial ? "mi" : "km");
 
@@ -806,25 +808,28 @@ Module.register("MMM-Tessie", {
       const topLevelEnabled = (this.config.intelligence !== false);
       if (!topLevelEnabled) return '';
       const id = this.intelState && this.intelState.currentId;
-      if (!id) return '';
-      let text = '';
-      if (id === 'tempHot') {
-        const c = this.config.imperial ? ((data.inside_temp - 32) * 5 / 9) : data.inside_temp;
-        const disp = this.config.imperial ? `${Math.round(data.inside_temp)}°` : `${Math.round(c)}°`;
-        text = `Cabin hot (${disp})`;
-      } else if (id === 'tempCold') {
-        const c = this.config.imperial ? ((data.inside_temp - 32) * 5 / 9) : data.inside_temp;
-        const disp = this.config.imperial ? `${Math.round(data.inside_temp)}°` : `${Math.round(c)}°`;
-        text = `Cabin cold (${disp})`;
-      } else if (id === 'chargingEta') {
-        text = formatRemainingShort(this.subscriptions["charge_time"].value);
-      } else if (id === 'chargeScheduled') {
-        text = `Charge starts at ${formatChargeStartLocal(this.subscriptions["charge_start"].value)}`;
+      // Prefer explicit charging/schedule messages when active
+      if (id === 'chargingEta') {
+        return `<div class=\"intel-section\" style=\"text-align:left; margin-top: 8px;\"><div class=\"normal small\">${formatRemainingShort(this.subscriptions["charge_time"].value)}</div></div>`;
       }
-      if (!text) return '';
-      return `<div class=\"intel-section\" style=\"text-align:left; margin-top: 8px;\">` +
-             `<div class=\"normal small\">${text}</div>` +
-             `</div>`;
+      if (id === 'chargeScheduled') {
+        return `<div class=\"intel-section\" style=\"text-align:left; margin-top: 8px;\"><div class=\"normal small\">Charge starts at ${formatChargeStartLocal(this.subscriptions["charge_start"].value)}</div></div>`;
+      }
+      // Temperature messages: compute against user thresholds to avoid mislabeling
+      const unitIsF = !!this.config.imperial;
+      const tDisplay = data.inside_temp == null ? null : parseFloat(data.inside_temp);
+      if (tDisplay == null || isNaN(tDisplay)) return '';
+      const thresholdsUser = (this.config.intelligenceOptions?.tempThresholds || {});
+      const hotUser = typeof thresholdsUser.cabinHot === 'number' ? thresholdsUser.cabinHot : (unitIsF ? 90 : 32);
+      const coldUser = typeof thresholdsUser.cabinCold === 'number' ? thresholdsUser.cabinCold : (unitIsF ? 40 : 4);
+      const disp = `${Math.round(tDisplay)}°`;
+      if (tDisplay >= hotUser) {
+        return `<div class=\"intel-section\" style=\"text-align:left; margin-top: 8px;\"><div class=\"normal small\">Cabin hot (${disp})</div></div>`;
+      }
+      if (tDisplay <= coldUser) {
+        return `<div class=\"intel-section\" style=\"text-align:left; margin-top: 8px;\"><div class=\"normal small\">Cabin cold (${disp})</div></div>`;
+      }
+      return '';
     };
 
     const stateIcons = [];
