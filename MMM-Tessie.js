@@ -1125,7 +1125,7 @@ Module.register("MMM-Tessie", {
       `;
     };
 
-    // Compact battery display
+    // iOS 26 gauge-style battery display
     const renderSmartBattery = () => {
       const levelClass = (batteryUsable <= 20) ? 'critical' : (batteryUsable <= 50 ? 'warning' : 'normal');
       const levelColors = {
@@ -1135,66 +1135,47 @@ Module.register("MMM-Tessie", {
       };
 
       return `
-        <div class="smart-battery-card" style="
-          background: rgba(28, 28, 30, 0.8);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 12px;
-          padding: 16px;
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-        ">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 6px;">
+          <span style="
+            font-size: 14px; font-weight: 600;
+            color: rgba(255, 255, 255, 0.7);
+          ">Battery</span>
+          <div style="flex: 1; display: flex; align-items: center; gap: 8px;">
             <div style="
-              font-size: 15px;
-              font-weight: 600;
-              color: rgba(255, 255, 255, 0.8);
-            ">Battery</div>
-            <div style="display: flex; align-items: baseline; gap: 2px;">
-              <span style="
-                font-size: 28px;
-                font-weight: 700;
-                color: ${levelColors[levelClass]};
-                line-height: 1;
-              ">${batteryBigNumber}</span>
-              <span style="
-                font-size: 17px;
-                font-weight: 600;
-                color: rgba(255, 255, 255, 0.6);
-              ">${batteryUnit}</span>
+              flex: 1; height: 3px;
+              background: rgba(255, 255, 255, 0.15);
+              border-radius: 1.5px; overflow: hidden;
+            ">
+              <div style="
+                width: ${batteryUsable}%;
+                height: 100%;
+                background: ${levelColors[levelClass]};
+                border-radius: 1.5px;
+                transition: all 0.4s ease;
+                ${charging ? `
+                  background: linear-gradient(90deg, 
+                    ${levelColors[levelClass]} 0%, 
+                    rgba(255,255,255,0.4) 50%, 
+                    ${levelColors[levelClass]} 100%);
+                  background-size: 200% 100%;
+                  animation: smartChargingShimmer 2s ease-in-out infinite;
+                ` : ''}
+              "></div>
             </div>
-          </div>
-          <div style="
-            width: 100%;
-            height: 4px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 2px;
-            overflow: hidden;
-          ">
-            <div style="
-              width: ${batteryUsable}%;
-              height: 100%;
-              background: ${levelColors[levelClass]};
-              border-radius: 2px;
-              transition: width 0.3s ease;
-              ${charging ? `
-                background: linear-gradient(90deg, 
-                  ${levelColors[levelClass]} 0%, 
-                  rgba(255,255,255,0.3) 50%, 
-                  ${levelColors[levelClass]} 100%);
-                background-size: 200% 100%;
-                animation: smartChargingShimmer 2s ease-in-out infinite;
-              ` : ''}
-            "></div>
+            <span style="
+              font-size: 16px; font-weight: 700;
+              color: ${levelColors[levelClass]};
+              min-width: 45px; text-align: right;
+            ">${batteryBigNumber}${batteryUnit}</span>
           </div>
         </div>
       `;
     };
 
-    // Quick status indicators
+    // Quick status indicators (exclude plugged in since it's redundant)
     const renderSmartStatus = () => {
       const statusItems = [];
       
-      if (pluggedIn === 'true') statusItems.push({ icon: 'mdi-power-plug', label: 'Plugged In', color: '#30D158' });
       if (locked === 'false') statusItems.push({ icon: 'mdi-lock-open-variant', label: 'Unlocked', color: '#FF9F0A' });
       if (sentry === 'true') statusItems.push({ icon: 'mdi-shield-check', label: 'Sentry Mode', color: '#007AFF' });
       if (isClimateOn === 'true') statusItems.push({ icon: 'mdi-air-conditioner', label: 'Climate On', color: '#5AC8FA' });
@@ -1204,28 +1185,27 @@ Module.register("MMM-Tessie", {
       return `
         <div class="smart-status-grid" style="
           display: grid;
-          grid-template-columns: repeat(2, 1fr);
+          grid-template-columns: repeat(${Math.min(statusItems.length, 2)}, 1fr);
           gap: 8px;
-          margin-top: 12px;
+          margin-top: 8px;
         ">
-          ${statusItems.slice(0, 4).map(item => `
+          ${statusItems.slice(0, 3).map(item => `
             <div style="
               display: flex;
               align-items: center;
               gap: 6px;
-              padding: 8px 12px;
-              background: rgba(${item.color === '#30D158' ? '48, 209, 88' : 
-                               item.color === '#FF9F0A' ? '255, 159, 10' :
+              padding: 6px 10px;
+              background: rgba(${item.color === '#FF9F0A' ? '255, 159, 10' :
                                item.color === '#007AFF' ? '0, 122, 255' : '90, 200, 250'}, 0.15);
               border-radius: 8px;
               border: 1px solid ${item.color}33;
             ">
               <span class="mdi ${item.icon}" style="
-                font-size: 14px;
+                font-size: 13px;
                 color: ${item.color};
               "></span>
               <span style="
-                font-size: 12px;
+                font-size: 11px;
                 font-weight: 500;
                 color: rgba(255, 255, 255, 0.8);
               ">${item.label}</span>
@@ -1250,9 +1230,9 @@ Module.register("MMM-Tessie", {
         const coldUser = (typeof thresholdsUser.cabinCold === 'number' ? thresholdsUser.cabinCold : (unitIsF ? 40 : 4));
         
         if (t >= hotUser) {
-          chips.push({ icon: 'mdi-thermometer-alert', text: `Hot ${Math.round(t)}°`, priority: 1 });
+          chips.push({ icon: 'mdi-thermometer-alert', text: `Hot ${Math.round(t)}°`, priority: 1, warning: true });
         } else if (t <= coldUser) {
-          chips.push({ icon: 'mdi-snowflake-alert', text: `Cold ${Math.round(t)}°`, priority: 1 });
+          chips.push({ icon: 'mdi-snowflake-alert', text: `Cold ${Math.round(t)}°`, priority: 1, warning: true });
         }
       }
       
@@ -1265,7 +1245,7 @@ Module.register("MMM-Tessie", {
         chips.push({ icon: 'mdi-lightning-bolt', text, priority: 2 });
       }
       
-      // Scheduled chip (only if not already hero)
+      // Scheduled chip (only if not already hero) - use dual icons for clarity
       if (enabled.schedule !== false && pluggedIn && (!timeToFull || timeToFull <= 0) && chargeStart && currentId !== 'chargeScheduled') {
         const d = new Date(chargeStart);
         if (!isNaN(d.getTime()) && d.getTime() > Date.now()) {
@@ -1274,7 +1254,7 @@ Module.register("MMM-Tessie", {
           const ampm = hrs >= 12 ? 'PM' : 'AM';
           hrs = hrs % 12; if (hrs === 0) hrs = 12;
           const mm = (mins < 10 ? '0' : '') + mins;
-          chips.push({ icon: 'mdi-clock-outline', text: `${hrs}:${mm}${ampm}`, priority: 3 });
+          chips.push({ icon: 'mdi-power-plug', secondIcon: 'mdi-clock-outline', text: `${hrs}:${mm}${ampm}`, priority: 3 });
         }
       }
       
@@ -1284,17 +1264,18 @@ Module.register("MMM-Tessie", {
       
       if (selected.length === 0) return '';
       return `
-        <div class="smart-chips" style="display:flex; gap:8px; flex-wrap:wrap; margin: 2px 0 12px 0;">
+        <div class="smart-chips" style="display:flex; gap:8px; flex-wrap:wrap; margin: 8px 0 0 0;">
           ${selected.map(c => `
             <div style="
               display:flex; align-items:center; gap:6px;
               border-radius: 9999px; padding: 6px 10px;
-              background: rgba(255,255,255,0.12);
-              border: 1px solid rgba(255,255,255,0.2);
+              background: ${c.warning ? 'rgba(255, 159, 10, 0.2)' : 'rgba(255,255,255,0.12)'};
+              border: 1px solid ${c.warning ? 'rgba(255, 159, 10, 0.4)' : 'rgba(255,255,255,0.2)'};
               backdrop-filter: blur(12px);
             ">
-              <span class="mdi ${c.icon}" style="font-size:14px; color: rgba(255,255,255,0.9);"></span>
-              <span style="font-size:12px; color: rgba(255,255,255,0.9); font-weight:600;">${c.text}</span>
+              <span class="mdi ${c.icon}" style="font-size:14px; color: ${c.warning ? '#FF9F0A' : 'rgba(255,255,255,0.9)'};"></span>
+              ${c.secondIcon ? `<span class="mdi ${c.secondIcon}" style="font-size:12px; color: rgba(255,255,255,0.7); margin-left: -2px;"></span>` : ''}
+              <span style="font-size:12px; color: ${c.warning ? '#FF9F0A' : 'rgba(255,255,255,0.9)'}; font-weight:600;">${c.text}</span>
             </div>
           `).join('')}
         </div>
@@ -1310,22 +1291,25 @@ Module.register("MMM-Tessie", {
       ">
         <link href="https://cdn.materialdesignicons.com/7.4.47/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
         
-        <!-- Full-bleed animated gradient background -->
+        <!-- Oval gradient mask behind vehicle -->
         <div class="smart-bg-base" style="
-          position:absolute; inset:-15%; z-index:0;
-          background: radial-gradient(120% 120% at 50% 50%, rgba(8,8,12,1) 0%, rgba(20,20,26,1) 60%);
+          position:absolute; inset:0; z-index:0;
+          background: transparent;
         "></div>
         <div class="smart-gradient-anim" style="
-          position:absolute; inset: -35%; z-index:1; 
-          filter: blur(50px) saturate(130%);
-          background: conic-gradient(from 0deg at 50% 50%, 
-            rgba(var(--accent-rgb),0.28), 
-            rgba(255,255,255,0.08), 
-            rgba(var(--accent-rgb),0.22), 
-            rgba(255,255,255,0.12), 
-            rgba(var(--accent-rgb),0.28));
-          animation: smartAurora 32s linear infinite;
-          opacity: 0.9;
+          position:absolute; 
+          left:50%; top:50%; 
+          transform: translate(-50%,-50%); 
+          z-index:1; 
+          width: ${Math.round(smartWidth * 1.2)}px;
+          height: ${Math.round(smartHeight * 0.8)}px;
+          filter: blur(45px) saturate(120%);
+          background: radial-gradient(ellipse 100% 80% at center, 
+            rgba(var(--accent-rgb),0.35), 
+            rgba(var(--accent-rgb),0.15) 50%, 
+            transparent 70%);
+          animation: smartAurora 28s linear infinite;
+          opacity: 0.85;
         "></div>
         
         <!-- Centered car overlay -->
@@ -1354,10 +1338,10 @@ Module.register("MMM-Tessie", {
         ">
           <div class="smart-top">
             ${renderIntelligenceHero()}
-            ${renderIntelChips()}
           </div>
           <div class="smart-bottom">
             ${renderSmartBattery()}
+            ${renderIntelChips()}
             ${renderSmartStatus()}
           </div>
         </div>
@@ -1369,8 +1353,8 @@ Module.register("MMM-Tessie", {
           100% { background-position: 200% 0; } 
         }
         @keyframes smartAurora { 
-          0% { transform: rotate(0deg) scale(1.2); } 
-          100% { transform: rotate(360deg) scale(1.2); } 
+          0% { transform: translate(-50%,-50%) rotate(0deg) scale(1.1); } 
+          100% { transform: translate(-50%,-50%) rotate(360deg) scale(1.1); } 
         }
         .smart-mode * { box-sizing: border-box; }
       </style>
