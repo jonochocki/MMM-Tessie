@@ -356,7 +356,7 @@ Module.register("MMM-Tessie", {
     // Sort by priority desc, then by recency (more recent eligibility wins)
     // Tuned behavior constants (not user-configurable)
     const minDwellMs = 10000;
-    const debounceMs = 500; // Reduced from 2000ms for faster temperature response
+    const debounceMs = 200; // Reduced for faster response
     const allowInterrupt = true;
 
     const nowEligible = candidates.map(c => {
@@ -401,11 +401,10 @@ Module.register("MMM-Tessie", {
     const debounceSatisfied = (now - winner.firstSeenAt) >= debounceMs;
 
     if (!currentId) {
-      if (debounceSatisfied) {
-        this.intelState.currentId = winner.id;
-        this.intelState.currentPriority = winner.priority;
-        this.intelState.lastChangeAt = now;
-      }
+      // If there's no current message, show the winner immediately without debounce
+      this.intelState.currentId = winner.id;
+      this.intelState.currentPriority = winner.priority;
+      this.intelState.lastChangeAt = now;
       return;
     }
 
@@ -1150,21 +1149,21 @@ Module.register("MMM-Tessie", {
           -webkit-backdrop-filter: blur(20px);
           border: 1px solid rgba(255, 255, 255, 0.12);
           border-radius: 9999px;
-          padding: 8px 14px;
+          padding: 6px 12px;
           margin-bottom: 8px;
           display: flex; align-items: center; gap: 10px;
         ">
           <div style="flex: 1; display: flex; align-items: center; gap: 8px;">
             <div style="
-              flex: 1; height: 4px;
+              flex: 1; height: 3px;
               background: rgba(255, 255, 255, 0.15);
-              border-radius: 2px; overflow: hidden;
+              border-radius: 1.5px; overflow: hidden;
             ">
               <div style="
                 width: ${batteryUsable}%;
                 height: 100%;
                 background: ${levelColors[levelClass]};
-                border-radius: 2px;
+                border-radius: 1.5px;
                 transition: all 0.4s ease;
                 ${charging ? `
                   background: linear-gradient(90deg, 
