@@ -41,6 +41,14 @@ module.exports = NodeHelper.create({
             vin: config.tessie.vin,
             periodMs: (config.updatePeriod ? config.updatePeriod : 5) * 1000
         };
+        self.mapOptions = {
+            enabled: (config.displayMode === 'map') || (config.displayMode === 'radial') || (config.mapOptions && config.mapOptions.enabled === true),
+            width: (config.mapOptions && config.mapOptions.width) ? config.mapOptions.width : 200,
+            height: (config.mapOptions && config.mapOptions.height) ? config.mapOptions.height : 200,
+            zoom: (config.mapOptions && config.mapOptions.zoom) ? config.mapOptions.zoom : 16,
+            marker_size: (config.mapOptions && config.mapOptions.markerSize) ? config.mapOptions.markerSize : 50,
+            style: (config.mapOptions && config.mapOptions.style) ? config.mapOptions.style : 'dark'
+        };
         self.pollConfig = {
             drivingMs: (config.pollingCadence && config.pollingCadence.drivingMs) ? config.pollingCadence.drivingMs : 5000,
             onlineMs: (config.pollingCadence && config.pollingCadence.onlineMs) ? config.pollingCadence.onlineMs : 30000,
@@ -94,31 +102,51 @@ module.exports = NodeHelper.create({
           .then(function(bundle) {
             if (!bundle) return;
             var mapped = self.mapTessieToModuleFields(bundle.state, bundle.location);
-            var shouldSend = false;
-            try {
-                if (!self.lastMappedValues) shouldSend = true;
-                else shouldSend = (JSON.stringify(self.lastMappedValues) !== JSON.stringify(mapped));
-            } catch (e) {
-                shouldSend = true;
+            // Preserve last known geofence if location not fetched or empty
+            if ((!mapped.geofence || mapped.geofence === '') && self.lastMappedValues && self.lastMappedValues.geofence) {
+                mapped.geofence = self.lastMappedValues.geofence;
             }
-            if (shouldSend) {
-                self.lastMappedValues = mapped;
-                self.lastSentAt = Date.now();
-                self.sendSocketNotification('TESSIE_STATE', { values: mapped });
+            var afterMap = Promise.resolve(mapped);
+            if (self.mapOptions && self.mapOptions.enabled) {
+                var mo = self.mapOptions;
+                var mapPath = '/' + encodeURIComponent(cfg.vin) + '/map?width=' + encodeURIComponent(mo.width) + '&height=' + encodeURIComponent(mo.height) + '&zoom=' + encodeURIComponent(mo.zoom) + '&marker_size=' + encodeURIComponent(mo.marker_size) + '&style=' + encodeURIComponent(mo.style);
+                afterMap = self.tessieGetBuffer(mapPath, cfg.token)
+                    .then(function(buf) {
+                        try {
+                            mapped.map_image = 'data:image/png;base64,' + buf.toString('base64');
+                        } catch (e) {}
+                        return mapped;
+                    })
+                    .catch(function() { return mapped; });
             }
 
-            // compute next delay
-            var nextMs = self.pollConfig ? self.pollConfig.onlineMs : cfg.periodMs;
-            if (mapped && typeof mapped.state === 'string') {
-                if (mapped.state === 'driving') nextMs = self.pollConfig.drivingMs;
-                else if (mapped.state === 'asleep' || mapped.state === 'offline') nextMs = self.pollConfig.asleepMs;
-                else nextMs = self.pollConfig.onlineMs;
-            }
-            // jitter +/-10%
-            var jitter = (Math.random() * 0.2) - 0.1;
-            nextMs = Math.max(1000, Math.floor(nextMs * (1 + jitter)));
-            self.scheduleNextPoll(nextMs);
-            self.tessieBackoffMs = null;
+            afterMap.then(function(finalMapped) {
+                var shouldSend = false;
+                try {
+                    if (!self.lastMappedValues) shouldSend = true;
+                    else shouldSend = (JSON.stringify(self.lastMappedValues) !== JSON.stringify(finalMapped));
+                } catch (e) {
+                    shouldSend = true;
+                }
+                if (shouldSend) {
+                    self.lastMappedValues = finalMapped;
+                    self.lastSentAt = Date.now();
+                    self.sendSocketNotification('TESSIE_STATE', { values: finalMapped });
+                }
+
+                // compute next delay
+                var nextMs = self.pollConfig ? self.pollConfig.onlineMs : cfg.periodMs;
+                if (finalMapped && typeof finalMapped.state === 'string') {
+                    if (finalMapped.state === 'driving') nextMs = self.pollConfig.drivingMs;
+                    else if (finalMapped.state === 'asleep' || finalMapped.state === 'offline') nextMs = self.pollConfig.asleepMs;
+                    else nextMs = self.pollConfig.onlineMs;
+                }
+                // jitter +/-10%
+                var jitter = (Math.random() * 0.2) - 0.1;
+                nextMs = Math.max(1000, Math.floor(nextMs * (1 + jitter)));
+                self.scheduleNextPoll(nextMs);
+                self.tessieBackoffMs = null;
+            });
           })
           .catch(function(err) {
             console.log(self.name + ': Tessie poll error: ', err);
@@ -157,6 +185,34 @@ module.exports = NodeHelper.create({
                         resolve(data);
                     } else {
                         reject(new Error('HTTP ' + res.statusCode + ': ' + data));
+                    }
+                });
+            });
+            req.on('error', function(e) { reject(e); });
+            req.end();
+        });
+    },
+
+    tessieGetBuffer: function(path, token) {
+        return new Promise(function(resolve, reject) {
+            var options = {
+                hostname: 'api.tessie.com',
+                port: 443,
+                path: path,
+                method: 'GET',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                    'Accept': '*/*'
+                }
+            };
+            var req = https.request(options, function(res) {
+                var data = [];
+                res.on('data', function(chunk) { data.push(chunk); });
+                res.on('end', function() {
+                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                        resolve(Buffer.concat(data));
+                    } else {
+                        reject(new Error('HTTP ' + res.statusCode));
                     }
                 });
             });
@@ -272,9 +328,11 @@ module.exports = NodeHelper.create({
         var pluggedIn = false;
         if (chg) {
             var cable = chg.conn_charge_cable;
-            if (cable && cable !== '<invalid>') pluggedIn = true;
-            if (chg.charge_port_latch === 'Engaged') pluggedIn = true;
-            if (chg.charge_port_door_open === true) pluggedIn = true;
+            var chargingState = (typeof chg.charging_state === 'string') ? chg.charging_state.toLowerCase() : '';
+            var cablePresent = (cable && cable !== '<invalid>');
+            var notDisconnected = (chargingState && chargingState !== 'disconnected');
+            pluggedIn = !!(cablePresent && notDisconnected);
+            // Note: we no longer infer plugged status from latch or port door alone to avoid false positives
         }
 
         var updating = veh && veh.software_update && veh.software_update.status && (veh.software_update.status.trim() !== '');
