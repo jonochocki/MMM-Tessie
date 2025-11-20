@@ -86,14 +86,14 @@ Module.register("MMM-Tessie", {
   start: function () {
     console.log(this.name + ": start called");
     const keys = [
-      'name','state','health',
-      'lat','lon','shift_state','speed',
-      'locked','sentry','windows','doors','trunk','frunk','user',
-      'outside_temp','inside_temp','climate_on','preconditioning',
-      'odometer','ideal_range','est_range','rated_range',
-      'battery','battery_usable','plugged_in','charge_added','charge_limit','charge_start','charge_time',
-      'update_available','geofence','tpms_pressure_fl','tpms_pressure_fr','tpms_pressure_rl','tpms_pressure_rr',
-      'image_model','image_options','map_image'
+      'name', 'state', 'health',
+      'lat', 'lon', 'shift_state', 'speed',
+      'locked', 'sentry', 'windows', 'doors', 'trunk', 'frunk', 'user',
+      'outside_temp', 'inside_temp', 'climate_on', 'preconditioning',
+      'odometer', 'ideal_range', 'est_range', 'rated_range',
+      'battery', 'battery_usable', 'plugged_in', 'charge_added', 'charge_limit', 'charge_start', 'charge_time',
+      'update_available', 'geofence', 'tpms_pressure_fl', 'tpms_pressure_fr', 'tpms_pressure_rl', 'tpms_pressure_rr',
+      'image_model', 'image_options', 'map_image'
     ];
 
     this.subscriptions = {};
@@ -101,20 +101,32 @@ Module.register("MMM-Tessie", {
       this.subscriptions[keys[i]] = { value: null, time: null };
     }
 
+    Log.info("Starting module: " + this.name);
+    this.tessieData = null;
+    this.intelState = {
+      activeItems: [],
+      lastEligibleAtById: {},
+      currentId: null,
+      currentPriority: -1,
+      lastChangeAt: 0
+    };
+
+    // Add a minute timer to force updateDom for relative time strings (e.g. "15m remaining")
+    // This ensures the display doesn't get stale between API polls
+    setInterval(() => {
+      if (this.subscriptions && this.subscriptions['state'] && this.subscriptions['state'].value) {
+        this.updateDom();
+      }
+    }, 60 * 1000);
+
     const hasTessieCreds = (this.config.tessie && this.config.tessie.accessToken && this.config.tessie.vin);
     if (!hasTessieCreds) {
       console.log(this.name + ': Tessie credentials missing; set config.tessie.accessToken and config.tessie.vin');
       this.missingCreds = true;
       return;
     }
-    // Initialize intelligence state container
-    this.intelState = {
-      currentId: null,
-      currentPriority: -1,
-      lastChangeAt: 0,
-      lastEligibleAtById: {}
-    };
-    this.openTessieConnection();
+
+    this.sendSocketNotification('INIT_TESSIE_CLIENT', this.config);
   },
 
   openTessieConnection: function () {
@@ -148,7 +160,7 @@ Module.register("MMM-Tessie", {
       console.log(this.name + ": Immediate DOM update");
       this.updateDom();
       this.lastRenderTimestamp = Date.now();
-    // Schedule a render in 5s if one isn't scheduled already
+      // Schedule a render in 5s if one isn't scheduled already
     } else if (!this.nextRenderTimer) {
       console.log(this.name + ": Scheduling DOM update");
       this.nextRenderTimer = setTimeout(() => {
@@ -241,10 +253,10 @@ Module.register("MMM-Tessie", {
       outside_temp = cToFFixed(outside_temp, 1);
       inside_temp = cToFFixed(inside_temp, 1);
 
-      tpms_pressure_fl = barToPSI(tpms_pressure_fl,1);
-      tpms_pressure_fr = barToPSI(tpms_pressure_fr,1);
-      tpms_pressure_rl = barToPSI(tpms_pressure_rl,1);
-      tpms_pressure_rr = barToPSI(tpms_pressure_rr,1);
+      tpms_pressure_fl = barToPSI(tpms_pressure_fl, 1);
+      tpms_pressure_fr = barToPSI(tpms_pressure_fr, 1);
+      tpms_pressure_rl = barToPSI(tpms_pressure_rl, 1);
+      tpms_pressure_rr = barToPSI(tpms_pressure_rr, 1);
     }
 
     const data = {
@@ -279,144 +291,89 @@ Module.register("MMM-Tessie", {
 
   // Centralized intelligence selection
   updateIntelligenceDecision: function (data) {
-    if (this.config.intelligence === false) return;
+    if (this.config.intelligence === false) {
+      this.intelState.activeItems = [];
+      return;
+    }
+
     const opts = this.config.intelligenceOptions || {};
-    const thresholdsUser = (opts.tempThresholds || {});
     const now = Date.now();
 
-    // Utility: Celsius only internally
-    const toC = (t) => {
-      if (t == null) return null;
-      return this.config.imperial ? ((t - 32) * 5 / 9) : t;
-    };
+    const insideTempC = data.inside_temp;
 
-    // Interpret user thresholds in configured units, then convert to Celsius for comparisons
+    // User thresholds are likely in their preferred unit.
     const unitIsF = !!this.config.imperial;
-    const toCFromUser = (t) => {
-      if (t == null) return null;
-      return unitIsF ? ((t - 32) * 5 / 9) : t;
-    };
-    const cabinC = toC(data.inside_temp);
+    const thresholdsUser = (opts.tempThresholds || {});
     const hotUser = (typeof thresholdsUser.cabinHot === 'number' ? thresholdsUser.cabinHot : (unitIsF ? 90 : 32));
     const coldUser = (typeof thresholdsUser.cabinCold === 'number' ? thresholdsUser.cabinCold : (unitIsF ? 40 : 4));
-    // Internal hysteresis deltas (non-configurable)
-    const hotDeltaUser = unitIsF ? 2 : 1;
-    const coldDeltaUser = unitIsF ? 2 : 1;
-    const hot = toCFromUser(hotUser);
-    const cold = toCFromUser(coldUser);
-    const hotClear = toCFromUser(hotUser - hotDeltaUser);
-    const coldClear = toCFromUser(coldUser + coldDeltaUser);
-    
-    // Eligibility predicates
-    const candidates = [];
 
-    // P1: Safety (temperature)
-    if (opts.temperature !== false && cabinC != null) {
-      const wasTempHot = this.intelState.currentId === 'tempHot';
-      const wasTempCold = this.intelState.currentId === 'tempCold';
-      const hotEligible = cabinC >= hot;
-      const hotClears = cabinC <= hotClear;
-      const coldEligible = cabinC <= cold;
-      const coldClears = cabinC >= coldClear;
+    // Convert user thresholds to C for comparison
+    const hotC = unitIsF ? ((hotUser - 32) * 5 / 9) : hotUser;
+    const coldC = unitIsF ? ((coldUser - 32) * 5 / 9) : coldUser;
 
-      if (hotEligible || (wasTempHot && !hotClears)) {
-        candidates.push({ id: 'tempHot', priority: 4, message: () => `Cabin hot (${this.config.imperial ? Math.round((cabinC * 9/5) + 32) : Math.round(cabinC)}°)` });
-      }
-      if (coldEligible || (wasTempCold && !coldClears)) {
-        candidates.push({ id: 'tempCold', priority: 4, message: () => `Cabin cold (${this.config.imperial ? Math.round((cabinC * 9/5) + 32) : Math.round(cabinC)}°)` });
+    const activeItems = [];
+
+    // 1. Critical: Safety / Alarm
+    // Doors/Trunk open while driving
+    if (data.state === 'driving') {
+      if (data.doorsOpen === 'true') activeItems.push({ id: 'doorOpenDriving', priority: 100, type: 'critical', icon: 'mdi-car-door-alert', text: 'Door Open', subtext: 'While Driving' });
+      if (data.trunkOpen === 'true') activeItems.push({ id: 'trunkOpenDriving', priority: 100, type: 'critical', icon: 'mdi-car-back-alert', text: 'Trunk Open', subtext: 'While Driving' });
+      if (data.frunkOpen === 'true') activeItems.push({ id: 'frunkOpenDriving', priority: 100, type: 'critical', icon: 'mdi-car-alert', text: 'Frunk Open', subtext: 'While Driving' });
+    }
+
+    // 2. Critical: Extreme Temperatures
+    if (opts.temperature !== false && insideTempC != null) {
+      if (insideTempC >= hotC) {
+        const disp = Math.round(unitIsF ? (insideTempC * 9 / 5 + 32) : insideTempC);
+        activeItems.push({ id: 'tempHot', priority: 90, type: 'critical', icon: 'mdi-thermometer-alert', text: `Cabin Hot ${disp}°`, subtext: 'Check Interior' });
+      } else if (insideTempC <= coldC) {
+        const disp = Math.round(unitIsF ? (insideTempC * 9 / 5 + 32) : insideTempC);
+        activeItems.push({ id: 'tempCold', priority: 90, type: 'critical', icon: 'mdi-snowflake-alert', text: `Cabin Cold ${disp}°`, subtext: 'Check Interior' });
       }
     }
 
-    // P2: Charging active
-    if (opts.charging !== false && data.pluggedIn && data.timeToFull && data.timeToFull > 0) {
-      candidates.push({ id: 'chargingEta', priority: 3, message: () => {
-        const totalMins = Math.max(0, Math.round(data.timeToFull * 60));
-        const hrs = Math.floor(totalMins / 60);
-        const mins = totalMins % 60;
-        const hPart = hrs > 0 ? (hrs + 'h ') : '';
-        return `${hPart}${mins}m remaining`;
-      }});
+    // 3. Active: Charging
+    if (opts.charging !== false && data.pluggedIn === 'true' && data.charging) {
+      const timeToFull = data.timeToFull;
+      const totalMins = Math.max(0, Math.round(timeToFull * 60));
+      const hrs = Math.floor(totalMins / 60);
+      const mins = totalMins % 60;
+      const timeStr = (hrs > 0 ? `${hrs}h ` : '') + `${mins}m`;
+      activeItems.push({ id: 'charging', priority: 80, type: 'active', icon: 'mdi-lightning-bolt', text: `${timeStr} remaining`, subtext: 'Charging' });
     }
 
-    // P3: Scheduled charging
-    if (opts.schedule !== false && data.pluggedIn && (!data.timeToFull || data.timeToFull <= 0) && data.chargeStart) {
+    // 4. Warning: Security / State (Parked)
+    if (data.state !== 'driving') {
+      if (data.locked === 'false') activeItems.push({ id: 'unlocked', priority: 60, type: 'warning', icon: 'mdi-lock-open-variant', text: 'Vehicle Unlocked', subtext: 'Secure Car' });
+      if (data.windowsOpen === 'true') activeItems.push({ id: 'windows', priority: 60, type: 'warning', icon: 'mdi-window-open', text: 'Windows Open', subtext: 'Close Windows' });
+      if (data.doorsOpen === 'true') activeItems.push({ id: 'doorOpen', priority: 55, type: 'warning', icon: 'mdi-car-door', text: 'Door Open', subtext: 'Close Door' });
+      if (data.trunkOpen === 'true') activeItems.push({ id: 'trunkOpen', priority: 55, type: 'warning', icon: 'mdi-car-back', text: 'Trunk Open', subtext: 'Close Trunk' });
+      if (data.frunkOpen === 'true') activeItems.push({ id: 'frunkOpen', priority: 55, type: 'warning', icon: 'mdi-car', text: 'Frunk Open', subtext: 'Close Frunk' });
+    }
+
+    // 5. Info: Scheduled Actions
+    if (opts.schedule !== false && data.pluggedIn === 'true' && (!data.charging) && data.chargeStart) {
       const d = new Date(data.chargeStart);
-      if (!isNaN(d.getTime()) && d.getTime() > Date.now()) {
-        candidates.push({ id: 'chargeScheduled', priority: 2, message: () => {
-          let hrs = d.getHours();
-          const mins = d.getMinutes();
-          const ampm = hrs >= 12 ? 'PM' : 'AM';
-          hrs = hrs % 12; if (hrs === 0) hrs = 12;
-          const mm = (mins < 10 ? '0' : '') + mins;
-          return `Charge starts at ${hrs}:${mm}${ampm}`;
-        }});
+      if (!isNaN(d.getTime()) && d.getTime() > now) {
+        let hrs = d.getHours();
+        const mins = d.getMinutes();
+        const ampm = hrs >= 12 ? 'PM' : 'AM';
+        hrs = hrs % 12; if (hrs === 0) hrs = 12;
+        const mm = (mins < 10 ? '0' : '') + mins;
+        activeItems.push({ id: 'scheduled', priority: 50, type: 'scheduled', icon: 'mdi-clock-outline', text: `Charge at ${hrs}:${mm}${ampm}`, subtext: 'Scheduled' });
       }
     }
 
-    // Sort by priority desc, then by recency (more recent eligibility wins)
-    // Tuned behavior constants (not user-configurable)
-    const minDwellMs = 10000;
-    const debounceMs = 200; // Reduced for faster response
-    const allowInterrupt = true;
+    // 6. Info: Status
+    if (data.sentry === 'true') activeItems.push({ id: 'sentry', priority: 40, type: 'info', icon: 'mdi-shield-check', text: 'Sentry Mode', subtext: 'Active' });
+    if (data.isClimateOn === 'true') activeItems.push({ id: 'climate', priority: 40, type: 'info', icon: 'mdi-fan', text: 'Climate On', subtext: 'Maintaining Temp' });
+    if (data.isPreconditioning === 'true') activeItems.push({ id: 'precond', priority: 40, type: 'info', icon: 'mdi-air-conditioner', text: 'Preconditioning', subtext: 'Preparing Battery' });
+    if (data.isUpdateAvailable === 'true') activeItems.push({ id: 'update', priority: 30, type: 'info', icon: 'mdi-gift', text: 'Update Available', subtext: 'Install Now' });
 
-    const nowEligible = candidates.map(c => {
-      const lastEligibleAt = this.intelState.lastEligibleAtById[c.id] || 0;
-      const firstSeenAt = lastEligibleAt === 0 ? now : lastEligibleAt;
-      return { ...c, firstSeenAt };
-    });
+    // Sort by priority desc
+    activeItems.sort((a, b) => b.priority - a.priority);
 
-    // Update eligibility timestamps
-    for (let c of nowEligible) {
-      this.intelState.lastEligibleAtById[c.id] = now;
-    }
-
-    nowEligible.sort((a, b) => {
-      if (a.priority !== b.priority) return b.priority - a.priority;
-      return b.firstSeenAt - a.firstSeenAt;
-    });
-
-    const currentId = this.intelState.currentId;
-    const currentPriority = this.intelState.currentPriority;
-    const lastChangeAt = this.intelState.lastChangeAt || 0;
-
-    // Decide winner
-    let winner = null;
-    if (nowEligible.length > 0) {
-      winner = nowEligible[0];
-    }
-
-    if (!winner) {
-      // Nothing eligible → clear current after dwell
-      if (currentId && (now - lastChangeAt) >= minDwellMs) {
-        this.intelState.currentId = null;
-        this.intelState.currentPriority = -1;
-        this.intelState.lastChangeAt = now;
-      }
-      return;
-    }
-
-    const isDifferent = winner.id !== currentId;
-    const higherPriority = winner.priority > (currentPriority || -1);
-    const dwellSatisfied = (now - lastChangeAt) >= minDwellMs;
-    const debounceSatisfied = (now - winner.firstSeenAt) >= debounceMs;
-
-    if (!currentId) {
-      // If there's no current message, show the winner immediately without debounce
-      this.intelState.currentId = winner.id;
-      this.intelState.currentPriority = winner.priority;
-      this.intelState.lastChangeAt = now;
-      return;
-    }
-
-    if (isDifferent) {
-      if ((higherPriority && allowInterrupt && debounceSatisfied) || (dwellSatisfied && debounceSatisfied)) {
-        this.intelState.currentId = winner.id;
-        this.intelState.currentPriority = winner.priority;
-        this.intelState.lastChangeAt = now;
-      }
-    } else {
-      // Same message continues; nothing to do
-    }
+    this.intelState.activeItems = activeItems;
   },
 
   generateTableDom: function (wrapper, data) {
@@ -447,7 +404,7 @@ Module.register("MMM-Tessie", {
       returnStr += (diffHrs > 0 ? (diffHrs + " Hour" + (diffHrs > 1 ? "s" : "") + ", ") : "");
       return returnStr + (diffMins > 0 ? (diffMins + " Min" + (diffMins > 1 ? "s" : "")) : "");
     }
-    
+
     //TODO bother formatting days? Poor trickle chargers...
     const makeChargeRemString = function (remHrs) {
       const hrs = Math.floor(remHrs);
@@ -499,7 +456,7 @@ Module.register("MMM-Tessie", {
 
       attrList.appendChild(odometerLi);
     }
-   
+
     if (this.config.displayOptions?.tpms?.visible ?? true) {
       var tpmsLi = document.createElement("li");
       tpmsLi.className = "mattribute";
@@ -664,8 +621,8 @@ Module.register("MMM-Tessie", {
     const batteryUnit = this.config.rangeDisplay === "%" ? "%" : (this.config.imperial ? "mi" : "km");
 
     const showTemps = ((this.config.showTemps === "always") ||
-                       (this.config.showTemps === "hvac_on" && (isClimateOn == "true" || isPreconditioning == "true"))) &&
-                      (inside_temp && outside_temp);
+      (this.config.showTemps === "hvac_on" && (isClimateOn == "true" || isPreconditioning == "true"))) &&
+      (inside_temp && outside_temp);
     const temperatureIcons = !showTemps ? "" :
       `<span class="mdi mdi-car normal small"></span>
        <span class="bright light small">${inside_temp}°</span>
@@ -988,7 +945,7 @@ Module.register("MMM-Tessie", {
       return { icon, x, y, angle };
     });
 
-    const curvedIcons = iconPositions.map(({icon, x, y}) => 
+    const curvedIcons = iconPositions.map(({ icon, x, y }) =>
       `<div class="curved-icon" style="position:absolute; left:${x - 9}px; top:${y - 9}px; width:18px; height:18px; display:flex; align-items:center; justify-content:center;">
         <span class="mdi mdi-${icon} ${icon == "alert-box" ? "alert" : ""}" style="font-size:12px;"></span>
       </div>`
@@ -1030,7 +987,7 @@ Module.register("MMM-Tessie", {
     const topOffset = this.config.sizeOptions?.topOffset ?? -20;
     // Reserve vertical stage so content (chips) never overlaps the car image
     const smartStageHeight = Math.round(Math.max(smartHeight * 0.45, smartWidth * 0.32));
-    
+
     const batteryBigNumber = this.config.rangeDisplay === "%" ? batteryUsable : idealRange;
     const batteryUnit = this.config.rangeDisplay === "%" ? "%" : (this.config.imperial ? "mi" : "km");
 
@@ -1054,70 +1011,40 @@ Module.register("MMM-Tessie", {
     };
     const accent = getAccentFromPaint(teslaOptions);
 
-    // Hero as smart chip (moved to middle position)
+    // Get active intelligence items
+    const activeItems = this.intelState.activeItems || [];
+    const heroItem = activeItems.length > 0 ? activeItems[0] : null;
+    // Secondary items are the next 2 highest priority items
+    const secondaryItems = activeItems.slice(1, 3);
+
+    // Hero Chip
     const renderHeroChip = () => {
-      const topLevelEnabled = (this.config.intelligence !== false);
-      if (!topLevelEnabled) return '';
-      
-      const id = this.intelState && this.intelState.currentId;
-      let heroContent = '';
-      let heroIcon = '';
-      let priority = 'normal';
+      let content, icon, priority, subtext;
 
-      // Determine hot/cold using user's configured units to avoid any mislabeling
-      const unitIsF = !!this.config.imperial;
-      const insideDisplay = parseFloat(inside_temp); // already in user's units
-      const thresholdsUser = (this.config.intelligenceOptions?.tempThresholds || {});
-      const hotUser = typeof thresholdsUser.cabinHot === 'number' ? thresholdsUser.cabinHot : (unitIsF ? 90 : 32);
-      const coldUser = typeof thresholdsUser.cabinCold === 'number' ? thresholdsUser.cabinCold : (unitIsF ? 40 : 4);
-      const isHotNow = insideDisplay >= hotUser;
-      const isColdNow = insideDisplay <= coldUser;
-
-      if (id === 'tempHot' || (id && id.startsWith('temp') && isHotNow)) {
-        const disp = `${Math.round(insideDisplay)}°`;
-        heroContent = `Cabin high at ${disp}`;
-        heroIcon = 'mdi-thermometer-alert';
-        priority = 'critical';
-      } else if (id === 'tempCold' || (id && id.startsWith('temp') && isColdNow)) {
-        const disp = `${Math.round(insideDisplay)}°`;
-        heroContent = `Cabin low at ${disp}`;
-        heroIcon = 'mdi-snowflake-alert';
-        priority = 'critical';
-      } else if (id === 'chargingEta') {
-        const totalMins = Math.max(0, Math.round(timeToFull * 60));
-        const hrs = Math.floor(totalMins / 60);
-        const mins = totalMins % 60;
-        const hPart = hrs > 0 ? `${hrs}h ` : '';
-        heroContent = `${hPart}${mins}m remaining`;
-        heroIcon = 'mdi-lightning-bolt';
-        priority = 'active';
-      } else if (id === 'chargeScheduled') {
-        const d = new Date(chargeStart);
-        if (!isNaN(d.getTime())) {
-          let hrs = d.getHours();
-          const mins = d.getMinutes();
-          const ampm = hrs >= 12 ? 'PM' : 'AM';
-          hrs = hrs % 12; if (hrs === 0) hrs = 12;
-          const mm = (mins < 10 ? '0' : '') + mins;
-          heroContent = `Starts at ${hrs}:${mm}${ampm}`;
-          heroIcon = 'mdi-power-plug';
-          priority = 'scheduled';
-        }
+      if (heroItem) {
+        content = heroItem.text;
+        icon = heroItem.icon;
+        priority = heroItem.type;
+        subtext = heroItem.subtext;
       } else {
         // Default state when no intelligence is active
-        heroContent = state === 'online' ? 'Ready' : 
-                     state === 'asleep' ? 'Sleeping' :
-                     state === 'driving' ? 'Driving' : 'Offline';
-        heroIcon = state === 'online' ? 'mdi-check-circle' :
-                   state === 'asleep' ? 'mdi-sleep' :
-                   state === 'driving' ? 'mdi-steering' : 'mdi-wifi-off';
+        content = state === 'online' ? 'Ready' :
+          state === 'asleep' ? 'Sleeping' :
+            state === 'driving' ? 'Driving' : 'Offline';
+        icon = state === 'online' ? 'mdi-check-circle' :
+          state === 'asleep' ? 'mdi-sleep' :
+            state === 'driving' ? 'mdi-steering' : 'mdi-wifi-off';
         priority = 'normal';
+        subtext = state === 'driving' ? `${speed} ${this.config.imperial ? 'mph' : 'km/h'}` :
+          (state === 'online' ? 'Connected' : 'Low Power');
       }
 
       const priorityColors = {
         critical: '#FF453A',
-        active: '#30D158', 
+        active: '#30D158',
         scheduled: '#007AFF',
+        warning: '#FF9F0A',
+        info: '#5AC8FA',
         normal: '#8E8E93'
       };
 
@@ -1125,55 +1052,47 @@ Module.register("MMM-Tessie", {
         critical: 'rgba(255, 69, 58, 0.4)',
         active: 'rgba(48, 209, 88, 0.35)',
         scheduled: 'rgba(0, 122, 255, 0.35)',
+        warning: 'rgba(255, 159, 10, 0.35)',
+        info: 'rgba(90, 200, 250, 0.35)',
         normal: 'rgba(255, 255, 255, 0.15)'
       };
 
+      const color = priorityColors[priority] || priorityColors.normal;
+      const bg = priorityBgs[priority] || priorityBgs.normal;
+
       return `
         <div style="
-          background: ${priorityBgs[priority]};
+          background: ${bg};
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           border: 1px solid ${priority === 'critical' ? 'rgba(255, 69, 58, 0.7)' : 'rgba(255, 255, 255, 0.25)'};
           border-radius: 9999px;
-          padding: 10px 14px;
+          padding: 10px 16px;
           margin-bottom: 12px;
-          display: flex; align-items: center; gap: 10px;
+          display: inline-flex; align-items: center; gap: 12px;
           box-shadow: 0 3px 16px rgba(0,0,0,0.5), ${priority === 'critical' ? '0 0 20px rgba(255, 69, 58, 0.4)' : '0 2px 8px rgba(0,0,0,0.3)'};
         ">
-          <span class="mdi ${heroIcon}" style="
-            font-size: 18px; color: ${priorityColors[priority]};
+          <span class="mdi ${icon}" style="
+            font-size: 24px; color: ${color};
             text-shadow: 0 2px 8px rgba(0,0,0,0.8);
-            filter: drop-shadow(0 0 6px ${priorityColors[priority]}60);
+            filter: drop-shadow(0 0 6px ${color}60);
           "></span>
-          <span style="
-            font-size: 15px; font-weight: 700;
-            color: rgba(255,255,255,0.98);
-            text-shadow: 0 2px 8px rgba(0,0,0,0.8);
-          ">${heroContent}</span>
+          <div style="display:flex; flex-direction:column; align-items:flex-start;">
+            <span style="
+              font-size: 16px; font-weight: 700;
+              color: rgba(255,255,255,0.98);
+              text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+              line-height: 1.1;
+            ">${content}</span>
+            <span style="
+              font-size: 11px; font-weight: 500;
+              color: rgba(255,255,255,0.7);
+              text-transform: uppercase; letter-spacing: 0.5px;
+              margin-top: 2px;
+            ">${subtext}</span>
+          </div>
         </div>
       `;
-    };
-
-    // Simple pill-style battery indicator (replaces semicircle gauge)
-    const renderBatteryPill = () => {
-      const levelClass = (batteryUsable <= 20) ? 'critical' : (batteryUsable <= 50 ? 'warning' : 'normal');
-      const levelColors = { critical: '#FF453A', warning: '#FF9F0A', normal: '#30D158' };
-      const color = levelColors[levelClass];
-      const pillText = this.config.showChargeLimit && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100
-        ? `${batteryBigNumber}${batteryUnit}/${chargeLimitSOC}`
-        : `${batteryBigNumber}${batteryUnit}`;
-      const icon = charging ? 'mdi-flash' : (levelClass === 'critical' ? 'mdi-battery-alert' : 'mdi-battery');
-      return `
-        <div class="battery-pill" style="
-          position:absolute; right: 18px; top: 58%; transform: translateY(-50%);
-          z-index:3; display:inline-flex; align-items:center; gap:8px;
-          padding: 8px 12px; border-radius:9999px;
-          background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25);
-          box-shadow: 0 2px 10px rgba(0,0,0,0.4);
-        ">
-          <span class="mdi ${icon}" style="font-size:14px; color:${color};"></span>
-          <span style="font-size:13px; font-weight:700; color:${color};">${pillText}</span>
-        </div>`;
     };
 
     // Full-width smart battery progress bar with limit break marker
@@ -1199,125 +1118,36 @@ Module.register("MMM-Tessie", {
       `;
     };
 
-    // Quick status indicators (exclude plugged in since it's redundant)
-    const renderSmartStatus = () => {
-      const statusItems = [];
-      
-      if (locked === 'false') statusItems.push({ icon: 'mdi-lock-open-variant', label: 'Unlocked', color: '#FF9F0A' });
-      if (sentry === 'true') statusItems.push({ icon: 'mdi-shield-check', label: 'Sentry Mode', color: '#007AFF' });
-      if (isClimateOn === 'true') statusItems.push({ icon: 'mdi-air-conditioner', label: 'Climate On', color: '#5AC8FA' });
-
-      if (statusItems.length === 0) return '';
-
-      return `
-        <div class="smart-status-grid" style="
-          display: grid;
-          grid-template-columns: repeat(${Math.min(statusItems.length, 2)}, 1fr);
-          gap: 8px;
-          margin-top: 8px;
-        ">
-          ${statusItems.slice(0, 3).map(item => `
-            <div style="
-              display: flex;
-              align-items: center;
-              gap: 6px;
-              padding: 6px 10px;
-              background: rgba(${item.color === '#FF9F0A' ? '255, 159, 10' :
-                               item.color === '#007AFF' ? '0, 122, 255' : '90, 200, 250'}, 0.15);
-              border-radius: 8px;
-              border: 1px solid ${item.color}33;
-            ">
-              <span class="mdi ${item.icon}" style="
-                font-size: 13px;
-                color: ${item.color};
-              "></span>
-              <span style="
-                font-size: 11px;
-                font-weight: 500;
-                color: rgba(255, 255, 255, 0.8);
-              ">${item.label}</span>
-            </div>
-          `).join('')}
-        </div>
-      `;
-    };
-
-    // Smart chips: context-aware, non-duplicate secondary info
+    // Secondary chips
     const renderIntelChips = () => {
-      const chips = [];
-      const currentId = this.intelState && this.intelState.currentId;
-      const enabled = this.config.intelligence !== false ? (this.config.intelligenceOptions || {}) : {};
-      
-      // Temperature warning chip (only if not already hero)
-      if (enabled.temperature !== false && inside_temp != null && currentId !== 'tempHot' && currentId !== 'tempCold') {
-        const unitIsF = !!this.config.imperial;
-        const tDisplay = parseFloat(inside_temp); // For display
-        const tC = unitIsF ? ((tDisplay - 32) * 5 / 9) : tDisplay; // Convert to Celsius for comparison
-        const thresholdsUser = (enabled.tempThresholds || {});
-        const hotUserThreshold = (typeof thresholdsUser.cabinHot === 'number' ? thresholdsUser.cabinHot : (unitIsF ? 90 : 32));
-        const coldUserThreshold = (typeof thresholdsUser.cabinCold === 'number' ? thresholdsUser.cabinCold : (unitIsF ? 40 : 4));
-        const hotC = unitIsF ? ((hotUserThreshold - 32) * 5 / 9) : hotUserThreshold;
-        const coldC = unitIsF ? ((coldUserThreshold - 32) * 5 / 9) : coldUserThreshold;
-        
-        if (tC >= hotC) {
-          chips.push({ icon: 'mdi-thermometer-alert', text: `Hot ${Math.round(tDisplay)}°`, priority: 1, warning: true });
-        } else if (tC <= coldC) {
-          chips.push({ icon: 'mdi-snowflake-alert', text: `Cold ${Math.round(tDisplay)}°`, priority: 1, warning: true });
-        }
-      }
-      
-      // Charging ETA chip (only if not already hero)
-      if (enabled.charging !== false && pluggedIn && timeToFull > 0 && currentId !== 'chargingEta') {
-        const totalMins = Math.max(0, Math.round(timeToFull * 60));
-        const hrs = Math.floor(totalMins / 60);
-        const mins = totalMins % 60;
-        const text = `${hrs > 0 ? (hrs + 'h ') : ''}${mins}m`;
-        chips.push({ icon: 'mdi-lightning-bolt', text, priority: 2 });
-      }
-      
-      // Scheduled chip (only if not already hero) - use dual icons for clarity
-      if (enabled.schedule !== false && pluggedIn && (!timeToFull || timeToFull <= 0) && chargeStart && currentId !== 'chargeScheduled') {
-        const d = new Date(chargeStart);
-        if (!isNaN(d.getTime()) && d.getTime() > Date.now()) {
-          let hrs = d.getHours();
-          const mins = d.getMinutes();
-          const ampm = hrs >= 12 ? 'PM' : 'AM';
-          hrs = hrs % 12; if (hrs === 0) hrs = 12;
-          const mm = (mins < 10 ? '0' : '') + mins;
-          chips.push({ icon: 'mdi-power-plug', secondIcon: 'mdi-clock-outline', text: `${hrs}:${mm}${ampm}`, priority: 3 });
-        }
-      }
-      
-      // Sort by priority, take top 2
-      chips.sort((a, b) => a.priority - b.priority);
-      const selected = chips.slice(0, 2);
-      
-      if (selected.length === 0) return '';
+      if (secondaryItems.length === 0) return '';
+
       return `
-        <div class="smart-chips" style="display:flex; gap:8px; flex-wrap:wrap; margin: 8px 0 0 0;">
-          ${selected.map(c => `
+        <div class="smart-chips" style="display:flex; gap:8px; flex-wrap:wrap; margin: 8px 0 0 0; justify-content: center;">
+          ${secondaryItems.map(c => {
+        const isWarn = c.type === 'warning' || c.type === 'critical';
+        return `
             <div style="
               display:flex; align-items:center; gap:6px;
-              border-radius: 9999px; padding: 6px 10px;
-              background: ${c.warning ? 'rgba(255, 159, 10, 0.4)' : 'rgba(255,255,255,0.2)'};
-              border: 1px solid ${c.warning ? 'rgba(255, 159, 10, 0.7)' : 'rgba(255,255,255,0.35)'};
+              border-radius: 9999px; padding: 6px 12px;
+              background: ${isWarn ? 'rgba(255, 159, 10, 0.4)' : 'rgba(255,255,255,0.2)'};
+              border: 1px solid ${isWarn ? 'rgba(255, 159, 10, 0.7)' : 'rgba(255,255,255,0.35)'};
               backdrop-filter: blur(12px);
-              box-shadow: ${c.warning ? '0 2px 12px rgba(255, 159, 10, 0.4)' : '0 2px 8px rgba(0,0,0,0.3)'};
+              box-shadow: ${isWarn ? '0 2px 12px rgba(255, 159, 10, 0.4)' : '0 2px 8px rgba(0,0,0,0.3)'};
             ">
               <span class="mdi ${c.icon}" style="
-                font-size:14px; 
-                color: ${c.warning ? '#FFB340' : 'rgba(255,255,255,0.95)'};
+                font-size:16px; 
+                color: ${isWarn ? '#FFB340' : 'rgba(255,255,255,0.95)'};
                 text-shadow: 0 1px 4px rgba(0,0,0,0.7);
               "></span>
-              ${c.secondIcon ? `<span class="mdi ${c.secondIcon}" style="font-size:12px; color: rgba(255,255,255,0.85); margin-left: -2px; text-shadow: 0 1px 4px rgba(0,0,0,0.7);"></span>` : ''}
               <span style="
-                font-size:12px; 
-                color: ${c.warning ? '#FFB340' : 'rgba(255,255,255,0.95)'}; 
-                font-weight:700;
+                font-size:13px; 
+                color: ${isWarn ? '#FFB340' : 'rgba(255,255,255,0.95)'}; 
+                font-weight:600;
                 text-shadow: 0 1px 4px rgba(0,0,0,0.7);
               ">${c.text}</span>
             </div>
-          `).join('')}
+          `}).join('')}
         </div>
       `;
     };
@@ -1375,13 +1205,12 @@ Module.register("MMM-Tessie", {
           justify-content: space-between;
         ">
           <div class="smart-top" style="min-height: ${smartStageHeight}px;"></div>
-          <div class="smart-middle">
+          <div class="smart-middle" style="display:flex; flex-direction:column; align-items:center;">
             ${renderBatteryBar()}
             ${renderHeroChip()}
           </div>
           <div class="smart-bottom">
             ${renderIntelChips()}
-            ${renderSmartStatus()}
           </div>
         </div>
         
@@ -1462,5 +1291,5 @@ Module.register("MMM-Tessie", {
         }
       </style>
     `;
-  }
+  },
 });
