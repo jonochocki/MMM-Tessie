@@ -3,5 +3,7 @@
   "version": "1.0.0",
   "description": "MagicMirror module displaying Tesla data via Tessie API",
   "author": "Jonathan Ochocki",
-  "dependencies": {}
+  "dependencies": {
+    "axios": "^1.13.2"
+  }
 }

@@ -18,7 +18,7 @@ Module.register("MMM-Tessie", {
       accessToken: null,
       vin: null,
     },
-    displayMode: 'graphic', // 'graphic' | 'map' | 'radial'
+    displayMode: 'graphic', // 'graphic' | 'map' | 'radial' | 'smart'
     mapOptions: {
       enabled: false, // if true or displayMode === 'map', backend fetches map image
       width: 200,
@@ -66,6 +66,19 @@ Module.register("MMM-Tessie", {
         visible: true,
       },
     },
+    // Top-level on/off toggle for Intelligence features (user-friendly)
+    intelligence: true,
+    intelligenceOptions: {
+      charging: true,
+      temperature: true,
+      schedule: true,
+      tempThresholds: {
+        // Defaults are in user's configured units
+        cabinHot: 90,
+        cabinCold: 40
+      }
+    },
+    showChargeLimit: true,
     showTemps: "hvac_on",
     updatePeriod: 10, // update period in seconds (default increased to 10)
   },
@@ -73,14 +86,14 @@ Module.register("MMM-Tessie", {
   start: function () {
     console.log(this.name + ": start called");
     const keys = [
-      'name','state','health',
-      'lat','lon','shift_state','speed',
-      'locked','sentry','windows','doors','trunk','frunk','user',
-      'outside_temp','inside_temp','climate_on','preconditioning',
-      'odometer','ideal_range','est_range','rated_range',
-      'battery','battery_usable','plugged_in','charge_added','charge_limit','charge_start','charge_time',
-      'update_available','geofence','tpms_pressure_fl','tpms_pressure_fr','tpms_pressure_rl','tpms_pressure_rr',
-      'image_model','image_options','map_image'
+      'name', 'state', 'health',
+      'lat', 'lon', 'shift_state', 'speed',
+      'locked', 'sentry', 'windows', 'doors', 'trunk', 'frunk', 'user',
+      'outside_temp', 'inside_temp', 'climate_on', 'preconditioning',
+      'odometer', 'ideal_range', 'est_range', 'rated_range',
+      'battery', 'battery_usable', 'plugged_in', 'charge_added', 'charge_limit', 'charge_start', 'charge_time',
+      'update_available', 'geofence', 'tpms_pressure_fl', 'tpms_pressure_fr', 'tpms_pressure_rl', 'tpms_pressure_rr',
+      'image_model', 'image_options', 'map_image'
     ];
 
     this.subscriptions = {};
@@ -88,13 +101,32 @@ Module.register("MMM-Tessie", {
       this.subscriptions[keys[i]] = { value: null, time: null };
     }
 
+    Log.info("Starting module: " + this.name);
+    this.tessieData = null;
+    this.intelState = {
+      activeItems: [],
+      lastEligibleAtById: {},
+      currentId: null,
+      currentPriority: -1,
+      lastChangeAt: 0
+    };
+
+    // Add a minute timer to force updateDom for relative time strings (e.g. "15m remaining")
+    // This ensures the display doesn't get stale between API polls
+    setInterval(() => {
+      if (this.subscriptions && this.subscriptions['state'] && this.subscriptions['state'].value) {
+        this.updateDom();
+      }
+    }, 60 * 1000);
+
     const hasTessieCreds = (this.config.tessie && this.config.tessie.accessToken && this.config.tessie.vin);
     if (!hasTessieCreds) {
       console.log(this.name + ': Tessie credentials missing; set config.tessie.accessToken and config.tessie.vin');
       this.missingCreds = true;
       return;
     }
-    this.openTessieConnection();
+
+    this.sendSocketNotification('INIT_TESSIE_CLIENT', this.config);
   },
 
   openTessieConnection: function () {
@@ -128,7 +160,7 @@ Module.register("MMM-Tessie", {
       console.log(this.name + ": Immediate DOM update");
       this.updateDom();
       this.lastRenderTimestamp = Date.now();
-    // Schedule a render in 5s if one isn't scheduled already
+      // Schedule a render in 5s if one isn't scheduled already
     } else if (!this.nextRenderTimer) {
       console.log(this.name + ": Scheduling DOM update");
       this.nextRenderTimer = setTimeout(() => {
@@ -221,10 +253,10 @@ Module.register("MMM-Tessie", {
       outside_temp = cToFFixed(outside_temp, 1);
       inside_temp = cToFFixed(inside_temp, 1);
 
-      tpms_pressure_fl = barToPSI(tpms_pressure_fl,1);
-      tpms_pressure_fr = barToPSI(tpms_pressure_fr,1);
-      tpms_pressure_rl = barToPSI(tpms_pressure_rl,1);
-      tpms_pressure_rr = barToPSI(tpms_pressure_rr,1);
+      tpms_pressure_fl = barToPSI(tpms_pressure_fl, 1);
+      tpms_pressure_fr = barToPSI(tpms_pressure_fr, 1);
+      tpms_pressure_rl = barToPSI(tpms_pressure_rl, 1);
+      tpms_pressure_rr = barToPSI(tpms_pressure_rr, 1);
     }
 
     const data = {
@@ -237,10 +269,15 @@ Module.register("MMM-Tessie", {
     }
 
     console.log(this.name + ": Generating DOM with data: ", data);
+
+    // Update intelligence decision state before rendering
+    this.updateIntelligenceDecision(data);
     if ((this.config.displayMode && this.config.displayMode.toLowerCase() === 'map') || (this.config.mapOptions && this.config.mapOptions.enabled)) {
       this.generateMapDom(wrapper, data);
     } else if (this.config.displayMode && this.config.displayMode.toLowerCase() === 'radial') {
       this.generateRadialDom(wrapper, data);
+    } else if (this.config.displayMode && this.config.displayMode.toLowerCase() === 'smart') {
+      this.generateSmartDom(wrapper, data);
     } else {
       this.generateGraphicDom(wrapper, data);
     }
@@ -250,6 +287,93 @@ Module.register("MMM-Tessie", {
       this.generateTableDom(wrapper, data);
 
     return wrapper;
+  },
+
+  // Centralized intelligence selection
+  updateIntelligenceDecision: function (data) {
+    if (this.config.intelligence === false) {
+      this.intelState.activeItems = [];
+      return;
+    }
+
+    const opts = this.config.intelligenceOptions || {};
+    const now = Date.now();
+
+    const insideTempC = data.inside_temp;
+
+    // User thresholds are likely in their preferred unit.
+    const unitIsF = !!this.config.imperial;
+    const thresholdsUser = (opts.tempThresholds || {});
+    const hotUser = (typeof thresholdsUser.cabinHot === 'number' ? thresholdsUser.cabinHot : (unitIsF ? 90 : 32));
+    const coldUser = (typeof thresholdsUser.cabinCold === 'number' ? thresholdsUser.cabinCold : (unitIsF ? 40 : 4));
+
+    // Convert user thresholds to C for comparison
+    const hotC = unitIsF ? ((hotUser - 32) * 5 / 9) : hotUser;
+    const coldC = unitIsF ? ((coldUser - 32) * 5 / 9) : coldUser;
+
+    const activeItems = [];
+
+    // 1. Critical: Safety / Alarm
+    // Doors/Trunk open while driving
+    if (data.state === 'driving') {
+      if (data.doorsOpen === 'true') activeItems.push({ id: 'doorOpenDriving', priority: 100, type: 'critical', icon: 'mdi-car-door-alert', text: 'Door Open', subtext: 'While Driving' });
+      if (data.trunkOpen === 'true') activeItems.push({ id: 'trunkOpenDriving', priority: 100, type: 'critical', icon: 'mdi-car-back-alert', text: 'Trunk Open', subtext: 'While Driving' });
+      if (data.frunkOpen === 'true') activeItems.push({ id: 'frunkOpenDriving', priority: 100, type: 'critical', icon: 'mdi-car-alert', text: 'Frunk Open', subtext: 'While Driving' });
+    }
+
+    // 2. Critical: Extreme Temperatures
+    if (opts.temperature !== false && insideTempC != null) {
+      if (insideTempC >= hotC) {
+        const disp = Math.round(unitIsF ? (insideTempC * 9 / 5 + 32) : insideTempC);
+        activeItems.push({ id: 'tempHot', priority: 90, type: 'critical', icon: 'mdi-thermometer-alert', text: `Cabin Hot ${disp}°`, subtext: 'Check Interior' });
+      } else if (insideTempC <= coldC) {
+        const disp = Math.round(unitIsF ? (insideTempC * 9 / 5 + 32) : insideTempC);
+        activeItems.push({ id: 'tempCold', priority: 90, type: 'critical', icon: 'mdi-snowflake-alert', text: `Cabin Cold ${disp}°`, subtext: 'Check Interior' });
+      }
+    }
+
+    // 3. Active: Charging
+    if (opts.charging !== false && data.pluggedIn === 'true' && data.charging) {
+      const timeToFull = data.timeToFull;
+      const totalMins = Math.max(0, Math.round(timeToFull * 60));
+      const hrs = Math.floor(totalMins / 60);
+      const mins = totalMins % 60;
+      const timeStr = (hrs > 0 ? `${hrs}h ` : '') + `${mins}m`;
+      activeItems.push({ id: 'charging', priority: 80, type: 'active', icon: 'mdi-lightning-bolt', text: `${timeStr} remaining`, subtext: 'Charging' });
+    }
+
+    // 4. Warning: Security / State (Parked)
+    if (data.state !== 'driving') {
+      if (data.locked === 'false') activeItems.push({ id: 'unlocked', priority: 60, type: 'warning', icon: 'mdi-lock-open-variant', text: 'Vehicle Unlocked', subtext: 'Secure Car' });
+      if (data.windowsOpen === 'true') activeItems.push({ id: 'windows', priority: 60, type: 'warning', icon: 'mdi-window-open', text: 'Windows Open', subtext: 'Close Windows' });
+      if (data.doorsOpen === 'true') activeItems.push({ id: 'doorOpen', priority: 55, type: 'warning', icon: 'mdi-car-door', text: 'Door Open', subtext: 'Close Door' });
+      if (data.trunkOpen === 'true') activeItems.push({ id: 'trunkOpen', priority: 55, type: 'warning', icon: 'mdi-car-back', text: 'Trunk Open', subtext: 'Close Trunk' });
+      if (data.frunkOpen === 'true') activeItems.push({ id: 'frunkOpen', priority: 55, type: 'warning', icon: 'mdi-car', text: 'Frunk Open', subtext: 'Close Frunk' });
+    }
+
+    // 5. Info: Scheduled Actions
+    if (opts.schedule !== false && data.pluggedIn === 'true' && (!data.charging) && data.chargeStart) {
+      const d = new Date(data.chargeStart);
+      if (!isNaN(d.getTime()) && d.getTime() > now) {
+        let hrs = d.getHours();
+        const mins = d.getMinutes();
+        const ampm = hrs >= 12 ? 'PM' : 'AM';
+        hrs = hrs % 12; if (hrs === 0) hrs = 12;
+        const mm = (mins < 10 ? '0' : '') + mins;
+        activeItems.push({ id: 'scheduled', priority: 50, type: 'scheduled', icon: 'mdi-clock-outline', text: `Charge at ${hrs}:${mm}${ampm}`, subtext: 'Scheduled' });
+      }
+    }
+
+    // 6. Info: Status
+    if (data.sentry === 'true') activeItems.push({ id: 'sentry', priority: 40, type: 'info', icon: 'mdi-shield-check', text: 'Sentry Mode', subtext: 'Active' });
+    if (data.isClimateOn === 'true') activeItems.push({ id: 'climate', priority: 40, type: 'info', icon: 'mdi-fan', text: 'Climate On', subtext: 'Maintaining Temp' });
+    if (data.isPreconditioning === 'true') activeItems.push({ id: 'precond', priority: 40, type: 'info', icon: 'mdi-air-conditioner', text: 'Preconditioning', subtext: 'Preparing Battery' });
+    if (data.isUpdateAvailable === 'true') activeItems.push({ id: 'update', priority: 30, type: 'info', icon: 'mdi-gift', text: 'Update Available', subtext: 'Install Now' });
+
+    // Sort by priority desc
+    activeItems.sort((a, b) => b.priority - a.priority);
+
+    this.intelState.activeItems = activeItems;
   },
 
   generateTableDom: function (wrapper, data) {
@@ -280,7 +404,7 @@ Module.register("MMM-Tessie", {
       returnStr += (diffHrs > 0 ? (diffHrs + " Hour" + (diffHrs > 1 ? "s" : "") + ", ") : "");
       return returnStr + (diffMins > 0 ? (diffMins + " Min" + (diffMins > 1 ? "s" : "")) : "");
     }
-    
+
     //TODO bother formatting days? Poor trickle chargers...
     const makeChargeRemString = function (remHrs) {
       const hrs = Math.floor(remHrs);
@@ -332,7 +456,7 @@ Module.register("MMM-Tessie", {
 
       attrList.appendChild(odometerLi);
     }
-   
+
     if (this.config.displayOptions?.tpms?.visible ?? true) {
       var tpmsLi = document.createElement("li");
       tpmsLi.className = "mattribute";
@@ -465,13 +589,40 @@ Module.register("MMM-Tessie", {
       const ampm = hrs >= 12 ? 'PM' : 'AM';
       hrs = hrs % 12; if (hrs === 0) hrs = 12;
       const mm = (mins < 10 ? '0' : '') + mins;
-      return `Charge starts at ${hrs}:${mm}${ampm}`;
+      return `${hrs}:${mm}${ampm}`;
+    };
+    const renderIntelligence = () => {
+      const topLevelEnabled = (this.config.intelligence !== false);
+      if (!topLevelEnabled) return '';
+      const id = this.intelState && this.intelState.currentId;
+      // Prefer explicit charging/schedule messages when active
+      if (id === 'chargingEta') {
+        return `<div class=\"intel-section\" style=\"text-align:center; margin-top: 8px;\"><div class=\"normal small\">${formatRemainingShort(timeToFull)}</div></div>`;
+      }
+      if (id === 'chargeScheduled') {
+        return `<div class=\"intel-section\" style=\"text-align:center; margin-top: 8px;\"><div class=\"normal small\">Charge starts at ${formatChargeStartLocal(chargeStart)}</div></div>`;
+      }
+      // Temperature messages: compute against user thresholds to avoid mislabeling
+      const unitIsF = !!this.config.imperial;
+      const tDisplay = inside_temp == null ? null : parseFloat(inside_temp);
+      if (tDisplay == null || isNaN(tDisplay)) return '';
+      const thresholdsUser = (this.config.intelligenceOptions?.tempThresholds || {});
+      const hotUser = typeof thresholdsUser.cabinHot === 'number' ? thresholdsUser.cabinHot : (unitIsF ? 90 : 32);
+      const coldUser = typeof thresholdsUser.cabinCold === 'number' ? thresholdsUser.cabinCold : (unitIsF ? 40 : 4);
+      const disp = `${Math.round(tDisplay)}°`;
+      if (tDisplay >= hotUser) {
+        return `<div class=\"intel-section\" style=\"text-align:center; margin-top: 8px;\"><div class=\"normal small\">Cabin hot (${disp})</div></div>`;
+      }
+      if (tDisplay <= coldUser) {
+        return `<div class=\"intel-section\" style=\"text-align:center; margin-top: 8px;\"><div class=\"normal small\">Cabin cold (${disp})</div></div>`;
+      }
+      return '';
     };
     const batteryUnit = this.config.rangeDisplay === "%" ? "%" : (this.config.imperial ? "mi" : "km");
 
     const showTemps = ((this.config.showTemps === "always") ||
-                       (this.config.showTemps === "hvac_on" && (isClimateOn == "true" || isPreconditioning == "true"))) &&
-                      (inside_temp && outside_temp);
+      (this.config.showTemps === "hvac_on" && (isClimateOn == "true" || isPreconditioning == "true"))) &&
+      (inside_temp && outside_temp);
     const temperatureIcons = !showTemps ? "" :
       `<span class="mdi mdi-car normal small"></span>
        <span class="bright light small">${inside_temp}°</span>
@@ -530,8 +681,8 @@ Module.register("MMM-Tessie", {
                       text-align: center; 
                       width: ${layWidth}px; 
                       height: 70px">
-            <span class="bright large light">${batteryBigNumber}</span><span class="normal medium">${batteryUnit}</span>
-            ${charging ? `<div class=\"normal small\" style=\"margin-top: 4px;\">${formatRemainingShort(timeToFull)}</div>` : ((pluggedIn && chargeStart && chargeStart !== '') ? `<div class=\"normal small\" style=\"margin-top: 4px;\">${formatChargeStartLocal(chargeStart)}</div>` : '')}
+            <span class="bright large light">${batteryBigNumber}</span><span class="normal medium">${batteryUnit}</span>${this.config.showChargeLimit && this.config.rangeDisplay === "%" && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100 ? `<span style="font-size: 0.6em; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>` : ''}
+            ${charging ? `<div class=\"normal small\" style=\"margin-top: 4px;\">${formatRemainingShort(timeToFull)}</div>` : ''}
           </div>
 
           <!-- State icons -->
@@ -553,6 +704,7 @@ Module.register("MMM-Tessie", {
           </div>
 
           ${batteryBarHtml}
+          ${renderIntelligence()}
 
           <!-- Optional graphic mode icons below the car -->
           <div style="text-align: center; 
@@ -607,7 +759,34 @@ Module.register("MMM-Tessie", {
       const ampm = hrs >= 12 ? 'PM' : 'AM';
       hrs = hrs % 12; if (hrs === 0) hrs = 12;
       const mm = (mins < 10 ? '0' : '') + mins;
-      return `Charge starts at ${hrs}:${mm}${ampm}`;
+      return `${hrs}:${mm}${ampm}`;
+    };
+    const renderIntelligence = () => {
+      const topLevelEnabled = (this.config.intelligence !== false);
+      if (!topLevelEnabled) return '';
+      const id = this.intelState && this.intelState.currentId;
+      // Prefer explicit charging/schedule messages when active
+      if (id === 'chargingEta') {
+        return `<div class=\"intel-section\" style=\"text-align:left; margin-top: 8px;\"><div class=\"normal small\">${formatRemainingShort(this.subscriptions["charge_time"].value)}</div></div>`;
+      }
+      if (id === 'chargeScheduled') {
+        return `<div class=\"intel-section\" style=\"text-align:left; margin-top: 8px;\"><div class=\"normal small\">Charge starts at ${formatChargeStartLocal(this.subscriptions["charge_start"].value)}</div></div>`;
+      }
+      // Temperature messages: compute against user thresholds to avoid mislabeling
+      const unitIsF = !!this.config.imperial;
+      const tDisplay = data.inside_temp == null ? null : parseFloat(data.inside_temp);
+      if (tDisplay == null || isNaN(tDisplay)) return '';
+      const thresholdsUser = (this.config.intelligenceOptions?.tempThresholds || {});
+      const hotUser = typeof thresholdsUser.cabinHot === 'number' ? thresholdsUser.cabinHot : (unitIsF ? 90 : 32);
+      const coldUser = typeof thresholdsUser.cabinCold === 'number' ? thresholdsUser.cabinCold : (unitIsF ? 40 : 4);
+      const disp = `${Math.round(tDisplay)}°`;
+      if (tDisplay >= hotUser) {
+        return `<div class=\"intel-section\" style=\"text-align:left; margin-top: 8px;\"><div class=\"normal small\">Cabin hot (${disp})</div></div>`;
+      }
+      if (tDisplay <= coldUser) {
+        return `<div class=\"intel-section\" style=\"text-align:left; margin-top: 8px;\"><div class=\"normal small\">Cabin cold (${disp})</div></div>`;
+      }
+      return '';
     };
 
     const stateIcons = [];
@@ -674,8 +853,9 @@ Module.register("MMM-Tessie", {
             <div class=\"left-content\" style=\"position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; justify-content: space-between;\">
               <div class=\"icons\" style=\"display:flex; gap: 6px; align-items:center;\">${renderedStateIcons.join(' ')} ${renderedNetworkIcons.join(' ')} </div>
               <div class=\"battery-row\" style=\"display:flex; flex-direction: column; align-items: flex-start;\">
-                <div class=\"percent\" style=\"margin-bottom: 4px;\"><span class=\"bright medium light\">${batteryBigNumber}</span><span class=\"normal small\">${batteryUnit}</span>${(pluggedIn && (this.subscriptions["charge_time"].value > 0.0)) ? `<div class=\\"normal small\\" style=\\"margin-top: 2px;\\">${formatRemainingShort(this.subscriptions["charge_time"].value)}</div>` : ((pluggedIn && (this.subscriptions["charge_time"].value <= 0.0) && (this.subscriptions["charge_start"].value && this.subscriptions["charge_start"].value !== '')) ? `<div class=\\"normal small\\" style=\\"margin-top: 2px;\\">${formatChargeStartLocal(this.subscriptions["charge_start"].value)}</div>` : '')}</div>
+                <div class=\"percent\" style=\"margin-bottom: 4px;\"><span class=\"bright medium light\">${batteryBigNumber}</span><span class=\"normal small\">${batteryUnit}</span>${this.config.showChargeLimit && this.config.rangeDisplay === "%" && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100 ? `<span style=\"font-size: 0.6em; color: rgba(255,255,255,0.6); vertical-align: super;\">/${chargeLimitSOC}</span>` : ''}${(pluggedIn && (this.subscriptions["charge_time"].value > 0.0)) ? `<div class=\\"normal small\\" style=\\"margin-top: 2px;\\">${formatRemainingShort(this.subscriptions["charge_time"].value)}</div>` : ''}</div>
                 ${batteryHtml}
+                ${renderIntelligence()}
               </div>
             </div>
           </div>
@@ -750,7 +930,7 @@ Module.register("MMM-Tessie", {
     const percentageOverlay = showPercentage ? `
       <div class="percentage-overlay" style="position:absolute; bottom:-28px; left:50%; transform:translateX(-50%); z-index:5; text-align:center;">
         <div class="percentage-text" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); border-radius: 9999px; padding: 4px 10px; display:inline-block;">
-          <span class="bright medium light">${batteryBigNumber}</span><span class="normal small">${batteryUnit}</span>
+          <span class="bright medium light">${batteryBigNumber}</span><span class="normal small">${batteryUnit}</span>${this.config.showChargeLimit && this.config.rangeDisplay === "%" && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100 ? `<span style="font-size: 0.6em; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>` : ''}
         </div>
       </div>` : '';
 
@@ -765,7 +945,7 @@ Module.register("MMM-Tessie", {
       return { icon, x, y, angle };
     });
 
-    const curvedIcons = iconPositions.map(({icon, x, y}) => 
+    const curvedIcons = iconPositions.map(({ icon, x, y }) =>
       `<div class="curved-icon" style="position:absolute; left:${x - 9}px; top:${y - 9}px; width:18px; height:18px; display:flex; align-items:center; justify-content:center;">
         <span class="mdi mdi-${icon} ${icon == "alert-box" ? "alert" : ""}" style="font-size:12px;"></span>
       </div>`
@@ -787,5 +967,329 @@ Module.register("MMM-Tessie", {
           </div>
         </div>
       </div>`;
-  }
+  },
+
+  generateSmartDom: function (wrapper, data) {
+    console.log(this.name + ": generateSmartDom called with data: ", data);
+
+    const {
+      carName, state, battery, batteryUsable, chargeLimitSOC,
+      chargeStart, timeToFull, pluggedIn, energyAdded, locked, sentry,
+      idealRange, estRange, speed, outside_temp, inside_temp, odometer,
+      windowsOpen, isClimateOn, isHealthy, charging,
+      doorsOpen, trunkOpen, frunkOpen, isUserPresent, isUpdateAvailable,
+      isPreconditioning, geofence, tpms_pressure_fl, tpms_pressure_fr, tpms_pressure_rl, tpms_pressure_rr
+    } = data;
+
+    // iOS 26 Design System
+    const smartWidth = this.config.sizeOptions?.width ?? 420;
+    const smartHeight = this.config.sizeOptions?.height ?? 300;
+    const topOffset = this.config.sizeOptions?.topOffset ?? -20;
+    // Reserve vertical stage so content (chips) never overlaps the car image
+    const smartStageHeight = Math.round(Math.max(smartHeight * 0.45, smartWidth * 0.32));
+
+    const batteryBigNumber = this.config.rangeDisplay === "%" ? batteryUsable : idealRange;
+    const batteryUnit = this.config.rangeDisplay === "%" ? "%" : (this.config.imperial ? "mi" : "km");
+
+    // Vehicle color-based accent
+    const teslaModel = this.config.carImageOptions?.model ?? this.subscriptions["image_model"]?.value ?? "m3";
+    const teslaView = this.config.carImageOptions?.view ?? "STUD_3QTR";
+    const teslaOptions = this.config.carImageOptions?.options ?? this.subscriptions["image_options"]?.value ?? "PPSW,W32B,SLR1";
+    const teslaImageWidth = 720;
+    const teslaImageUrl = `https://static-assets.tesla.com/v1/compositor/?model=${teslaModel}&view=${teslaView}&size=${teslaImageWidth}&options=${teslaOptions}&bkba_opt=1`;
+
+    const getAccentFromPaint = (optsStr) => {
+      if (!optsStr || typeof optsStr !== 'string') return { hex: '#007AFF', rgb: '0, 122, 255' };
+      const u = optsStr.toUpperCase();
+      if (u.includes('PPMR')) return { hex: '#FF3B30', rgb: '255, 59, 48' }; // Red
+      if (u.includes('PPSB')) return { hex: '#007AFF', rgb: '0, 122, 255' }; // Blue
+      if (u.includes('PMNG')) return { hex: '#8E8E93', rgb: '142, 142, 147' }; // Midnight Silver
+      if (u.includes('PMSS')) return { hex: '#D1D1D6', rgb: '209, 209, 214' }; // Silver
+      if (u.includes('PBSB')) return { hex: '#FFFFFF', rgb: '255, 255, 255' }; // Black
+      if (u.includes('PPSW')) return { hex: '#F2F2F7', rgb: '242, 242, 247' }; // White
+      return { hex: '#007AFF', rgb: '0, 122, 255' }; // Default blue
+    };
+    const accent = getAccentFromPaint(teslaOptions);
+
+    // Get active intelligence items
+    const activeItems = this.intelState.activeItems || [];
+    const heroItem = activeItems.length > 0 ? activeItems[0] : null;
+    // Secondary items are the next 2 highest priority items
+    const secondaryItems = activeItems.slice(1, 3);
+
+    // Hero Chip
+    const renderHeroChip = () => {
+      let content, icon, priority, subtext;
+
+      if (heroItem) {
+        content = heroItem.text;
+        icon = heroItem.icon;
+        priority = heroItem.type;
+        subtext = heroItem.subtext;
+      } else {
+        // Default state when no intelligence is active
+        content = state === 'online' ? 'Ready' :
+          state === 'asleep' ? 'Sleeping' :
+            state === 'driving' ? 'Driving' : 'Offline';
+        icon = state === 'online' ? 'mdi-check-circle' :
+          state === 'asleep' ? 'mdi-sleep' :
+            state === 'driving' ? 'mdi-steering' : 'mdi-wifi-off';
+        priority = 'normal';
+        subtext = state === 'driving' ? `${speed} ${this.config.imperial ? 'mph' : 'km/h'}` :
+          (state === 'online' ? 'Connected' : 'Low Power');
+      }
+
+      const priorityColors = {
+        critical: '#FF453A',
+        active: '#30D158',
+        scheduled: '#007AFF',
+        warning: '#FF9F0A',
+        info: '#5AC8FA',
+        normal: '#8E8E93'
+      };
+
+      const priorityBgs = {
+        critical: 'rgba(255, 69, 58, 0.4)',
+        active: 'rgba(48, 209, 88, 0.35)',
+        scheduled: 'rgba(0, 122, 255, 0.35)',
+        warning: 'rgba(255, 159, 10, 0.35)',
+        info: 'rgba(90, 200, 250, 0.35)',
+        normal: 'rgba(255, 255, 255, 0.15)'
+      };
+
+      const color = priorityColors[priority] || priorityColors.normal;
+      const bg = priorityBgs[priority] || priorityBgs.normal;
+
+      return `
+        <div style="
+          background: ${bg};
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border: 1px solid ${priority === 'critical' ? 'rgba(255, 69, 58, 0.7)' : 'rgba(255, 255, 255, 0.25)'};
+          border-radius: 9999px;
+          padding: 10px 16px;
+          margin-bottom: 12px;
+          display: inline-flex; align-items: center; gap: 12px;
+          box-shadow: 0 3px 16px rgba(0,0,0,0.5), ${priority === 'critical' ? '0 0 20px rgba(255, 69, 58, 0.4)' : '0 2px 8px rgba(0,0,0,0.3)'};
+        ">
+          <span class="mdi ${icon}" style="
+            font-size: 24px; color: ${color};
+            text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+            filter: drop-shadow(0 0 6px ${color}60);
+          "></span>
+          <div style="display:flex; flex-direction:column; align-items:flex-start;">
+            <span style="
+              font-size: 16px; font-weight: 700;
+              color: rgba(255,255,255,0.98);
+              text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+              line-height: 1.1;
+            ">${content}</span>
+            <span style="
+              font-size: 11px; font-weight: 500;
+              color: rgba(255,255,255,0.7);
+              text-transform: uppercase; letter-spacing: 0.5px;
+              margin-top: 2px;
+            ">${subtext}</span>
+          </div>
+        </div>
+      `;
+    };
+
+    // Full-width smart battery progress bar with limit break marker
+    const renderBatteryBar = () => {
+      if (this.config.displayOptions?.batteryBar?.visible === false) return '';
+      const barWidth = Math.max(120, smartWidth - 36);
+      const barHeight = 28;
+      const clampedUsable = Math.max(0, Math.min(100, batteryUsable));
+      const clampedLimit = Math.max(0, Math.min(100, chargeLimitSOC || 0));
+      const usablePx = Math.round(barWidth * (clampedUsable / 100));
+      const limitLeftPx = Math.round(barWidth * (clampedLimit / 100));
+      const level = (clampedUsable <= 20) ? 'low' : (clampedUsable <= 50 ? 'med' : 'high');
+      const showLimit = clampedLimit > 0 && clampedLimit < 100;
+      const valueText = this.config.rangeDisplay === '%' ? `${batteryBigNumber}${batteryUnit}` : `${batteryBigNumber}${batteryUnit}`;
+      return `
+        <div class="smart-battery" role="img" aria-label="Battery ${clampedUsable} percent" style="width:${barWidth}px; height:${barHeight}px;">
+          <div class="smart-battery-fill ${level} ${charging ? 'charging' : ''}" style="width:${usablePx}px;"></div>
+          ${showLimit ? `
+            <div class=\"smart-battery-limit\" style=\"left:${limitLeftPx}px;\">${clampedLimit}</div>
+          ` : ''}
+          <div class="smart-battery-value">${valueText}</div>
+        </div>
+      `;
+    };
+
+    // Secondary chips
+    const renderIntelChips = () => {
+      if (secondaryItems.length === 0) return '';
+
+      return `
+        <div class="smart-chips" style="display:flex; gap:8px; flex-wrap:wrap; margin: 8px 0 0 0; justify-content: center;">
+          ${secondaryItems.map(c => {
+        const isWarn = c.type === 'warning' || c.type === 'critical';
+        return `
+            <div style="
+              display:flex; align-items:center; gap:6px;
+              border-radius: 9999px; padding: 6px 12px;
+              background: ${isWarn ? 'rgba(255, 159, 10, 0.4)' : 'rgba(255,255,255,0.2)'};
+              border: 1px solid ${isWarn ? 'rgba(255, 159, 10, 0.7)' : 'rgba(255,255,255,0.35)'};
+              backdrop-filter: blur(12px);
+              box-shadow: ${isWarn ? '0 2px 12px rgba(255, 159, 10, 0.4)' : '0 2px 8px rgba(0,0,0,0.3)'};
+            ">
+              <span class="mdi ${c.icon}" style="
+                font-size:16px; 
+                color: ${isWarn ? '#FFB340' : 'rgba(255,255,255,0.95)'};
+                text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+              "></span>
+              <span style="
+                font-size:13px; 
+                color: ${isWarn ? '#FFB340' : 'rgba(255,255,255,0.95)'}; 
+                font-weight:600;
+                text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+              ">${c.text}</span>
+            </div>
+          `}).join('')}
+        </div>
+      `;
+    };
+
+    wrapper.innerHTML = `
+      <div class="smart-mode" style="
+        width: ${smartWidth}px; min-height: ${smartHeight}px; margin-top: ${topOffset}px;
+        position: relative; 
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+        --accent-rgb: ${accent.rgb};
+      ">
+        <link href="https://cdn.materialdesignicons.com/7.4.47/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
+        
+        <!-- Dynamic animated gradient backdrop -->
+        <div class="smart-gradient-anim" style="
+          position:absolute; 
+          left:50%; top:40%; 
+          transform: translate(-50%,-50%); 
+          z-index:1; 
+          width: ${Math.round(smartWidth * 1.3)}px;
+          height: ${Math.round(smartHeight * 0.9)}px;
+          filter: blur(35px) saturate(140%);
+          background: 
+            radial-gradient(ellipse 100% 80% at 50% 50%, 
+              rgba(var(--accent-rgb),0.8), 
+              rgba(var(--accent-rgb),0.5) 40%, 
+              rgba(var(--accent-rgb),0.2) 70%,
+              transparent 85%);
+          animation: smartBreath 8s ease-in-out infinite;
+          opacity: 1.0;
+        "></div>
+        
+        <!-- Centered car overlay (positioned higher and left) -->
+        <div class="smart-car-overlay" style="
+          position:absolute; 
+          left:40%; top:32%; 
+          transform: translate(-50%,-50%); 
+          z-index:2; opacity: 0.42;
+          width:${Math.round(smartWidth * 0.75)}px; 
+          height:${Math.round(smartWidth * 0.48)}px; 
+          background-image: url('${teslaImageUrl}'); 
+          background-repeat:no-repeat;
+          background-position:center center; 
+          background-size: contain; 
+          pointer-events:none;
+        "></div>
+        
+        <!-- Content layer with proper spacing for gauge -->
+        <div class="smart-content" style="
+          position: relative; z-index: 3; 
+          padding: 18px 18px 20px 18px;
+          min-height: ${smartHeight}px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+        ">
+          <div class="smart-top" style="min-height: ${smartStageHeight}px;"></div>
+          <div class="smart-middle" style="display:flex; flex-direction:column; align-items:center;">
+            ${renderBatteryBar()}
+            ${renderHeroChip()}
+          </div>
+          <div class="smart-bottom">
+            ${renderIntelChips()}
+          </div>
+        </div>
+        
+        <!-- Battery pill removed in favor of full-width progress bar -->
+      </div>
+      
+      <style>
+        @keyframes smartChargingShimmer { 
+          0% { background-position: -200% 0; } 
+          100% { background-position: 200% 0; } 
+        }
+        @keyframes smartBreath { 
+          0%, 100% { 
+            transform: translate(-50%,-50%) scale(1.0); 
+            filter: blur(35px) saturate(140%) hue-rotate(0deg);
+            opacity: 0.9; 
+          } 
+          25% { 
+            transform: translate(-50%,-50%) scale(1.08); 
+            filter: blur(38px) saturate(150%) hue-rotate(8deg);
+            opacity: 1.0; 
+          } 
+          50% { 
+            transform: translate(-50%,-50%) scale(1.15); 
+            filter: blur(32px) saturate(160%) hue-rotate(15deg);
+            opacity: 1.0; 
+          } 
+          75% { 
+            transform: translate(-50%,-50%) scale(1.08); 
+            filter: blur(38px) saturate(150%) hue-rotate(8deg);
+            opacity: 1.0; 
+          } 
+        }
+        @keyframes smartGaugeShimmer {
+          0% { stroke-dashoffset: 0; }
+          100% { stroke-dashoffset: 20; }
+        }
+        .smart-mode * { box-sizing: border-box; }
+        .smart-battery {
+          position: relative;
+          margin: 6px 0 12px 0;
+          border-radius: 9999px;
+          background: linear-gradient(to bottom, rgba(255,255,255,0.10), rgba(255,255,255,0.04));
+          border: 1px solid rgba(255,255,255,0.22);
+          overflow: hidden;
+        }
+        .smart-battery-fill {
+          position:absolute; top:0; left:0; bottom:0;
+          background-image: linear-gradient(90deg, #30D158, #22C04E 60%, #159E3F);
+          box-shadow: inset 0 0 8px rgba(255,255,255,0.06);
+          transition: width 400ms cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .smart-battery-fill.low { background-image: linear-gradient(90deg, #FF453A, #FF3B30); }
+        .smart-battery-fill.med { background-image: linear-gradient(90deg, #FF9F0A, #FF8C00); }
+        .smart-battery-fill.charging {
+          background-size: 200% 100%;
+          background-image: linear-gradient(90deg, rgba(48,209,88,0.95) 25%, rgba(48,209,88,0.65) 50%, rgba(48,209,88,0.95) 75%);
+          animation: smartChargingShimmer 2.2s linear infinite;
+        }
+        .smart-battery-limit {
+          position:absolute; top:50%; transform: translate(-50%, -50%);
+          height: 72%; min-width: 26px; padding: 0 6px;
+          display:flex; align-items:center; justify-content:center;
+          background: rgba(0,0,0,0.6);
+          border: 1px dashed rgba(255,255,255,0.6);
+          color: rgba(255,255,255,0.95);
+          font-size: 11px; font-weight: 800; letter-spacing: 0.2px;
+          border-radius: 6px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+          pointer-events: none;
+        }
+        .smart-battery-value {
+          position:absolute; right:10px; top:50%; transform: translateY(-50%);
+          color: rgba(255,255,255,0.95);
+          font-weight: 800; font-size: 14px;
+          text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+          mix-blend-mode: normal;
+        }
+      </style>
+    `;
+  },
 });
