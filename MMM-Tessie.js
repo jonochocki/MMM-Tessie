@@ -138,14 +138,19 @@ Module.register("MMM-Tessie", {
     console.log(this.name + ": socketNotificationReceived - Notification: " + notification);
     if (notification === 'TESSIE_STATE') {
       if (payload && payload.values) {
-        console.log(this.name + ": TESSIE_STATE received");
+        console.log(this.name + ": TESSIE_STATE received with " + Object.keys(payload.values).length + " fields");
         const now = Date.now();
+        let changed = false;
         for (let key in payload.values) {
           if (this.subscriptions[key]) {
+            if (this.subscriptions[key].value !== payload.values[key]) {
+              changed = true;
+            }
             this.subscriptions[key].value = payload.values[key];
             this.subscriptions[key].time = now;
           }
         }
+        console.log(this.name + ": Data changed: " + changed);
         this.triggerDomUpdate();
       } else {
         console.log(this.name + ': TESSIE_STATE - No payload');
@@ -154,20 +159,30 @@ Module.register("MMM-Tessie", {
   },
 
   triggerDomUpdate: function () {
-    console.log(this.name + ": triggerDomUpdate called");
-    // Render immediately if we never rendered before or if it's more than 5s ago (configurable)
-    if (!this.lastRenderTimestamp || this.lastRenderTimestamp <= (Date.now() - this.config.updatePeriod * 1000)) {
+    const now = Date.now();
+    const updatePeriodMs = (this.config.updatePeriod || 10) * 1000;
+    console.log(this.name + ": triggerDomUpdate called. Last render: " + (this.lastRenderTimestamp ? (now - this.lastRenderTimestamp) + "ms ago" : "never"));
+
+    // Render immediately if we never rendered before or if it's more than updatePeriod ago
+    if (!this.lastRenderTimestamp || this.lastRenderTimestamp <= (now - updatePeriodMs)) {
       console.log(this.name + ": Immediate DOM update");
       this.updateDom();
-      this.lastRenderTimestamp = Date.now();
-      // Schedule a render in 5s if one isn't scheduled already
+      this.lastRenderTimestamp = now;
+      if (this.nextRenderTimer) {
+        clearTimeout(this.nextRenderTimer);
+        this.nextRenderTimer = null;
+      }
     } else if (!this.nextRenderTimer) {
-      console.log(this.name + ": Scheduling DOM update");
+      const delay = updatePeriodMs - (now - this.lastRenderTimestamp);
+      console.log(this.name + ": Scheduling DOM update in " + delay + "ms");
       this.nextRenderTimer = setTimeout(() => {
+        console.log(this.name + ": Executing scheduled DOM update");
         this.updateDom();
         this.lastRenderTimestamp = Date.now();
         this.nextRenderTimer = null;
-      }, this.config.updatePeriod * 1000);
+      }, delay);
+    } else {
+      console.log(this.name + ": DOM update already scheduled");
     }
   },
 
@@ -869,105 +884,182 @@ Module.register("MMM-Tessie", {
 
     const {
       state, battery, batteryUsable, chargeLimitSOC, pluggedIn, locked, sentry, windowsOpen, doorsOpen, trunkOpen, frunkOpen,
-      isUserPresent, isClimateOn, isPreconditioning, isHealthy, isUpdateAvailable, idealRange
+      isUserPresent, isClimateOn, isPreconditioning, isHealthy, isUpdateAvailable, idealRange, inside_temp, outside_temp,
+      charging, timeToFull, chargeStart
     } = data;
 
-    const side = Math.min(this.config.mapOptions?.width ?? 200, this.config.mapOptions?.height ?? 200);
-    const radius = side / 2;
-    const ringThickness = this.config.radialOptions?.ringThickness ?? 8;
-    const iconBandThickness = this.config.radialOptions?.iconBandThickness ?? 18;
-    const gapDegrees = this.config.radialOptions?.gapDegrees ?? 6;
-    const showCar = this.config.radialOptions?.showCar !== false;
+    const side = Math.min(this.config.mapOptions?.width ?? 300, this.config.mapOptions?.height ?? 300);
+    const mapSize = Math.round(side * 0.7); // Increased to 70%
+    const center = side / 2;
+    const radius = (side / 2) - 10; // Padding
 
     const mapImg = this.subscriptions["map_image"]?.value;
 
-    const teslaModel = this.config.carImageOptions?.model ?? this.subscriptions["image_model"]?.value ?? "m3";
-    const teslaView = this.config.carImageOptions?.view ?? "STUD_3QTR";
-    const teslaOptions = this.config.carImageOptions?.options ?? this.subscriptions["image_options"]?.value ?? "PPSW,W32B,SLR1";
-    const teslaImageWidth = 720;
-    const teslaImageUrl = `https://static-assets.tesla.com/v1/compositor/?model=${teslaModel}&view=${teslaView}&size=${teslaImageWidth}&options=${teslaOptions}&bkba_opt=1`;
-    const imageOpacity = this.config.carImageOptions?.imageOpacity ?? 0.7;
+    const formatRemainingShort = function (remHrs) {
+      if (!remHrs || remHrs <= 0) return '';
+      const totalMins = Math.max(0, Math.round(remHrs * 60));
+      const hrs = Math.floor(totalMins / 60);
+      const mins = totalMins % 60;
+      const hPart = hrs > 0 ? (hrs + "h ") : '';
+      return hPart + mins + "m";
+    };
 
-    // Battery progress calculation
-    const batteryPct = Math.max(0, Math.min(100, (this.config.rangeDisplay === '%' ? batteryUsable : idealRange)));
-    const circumference = 2 * Math.PI * (radius - ringThickness / 2);
-    const totalArc = circumference * (360 - gapDegrees) / 360;
-    const progressArc = (batteryPct / 100) * totalArc;
-    const remainingArc = totalArc - progressArc;
+    // SVG Arc Helper
+    const polarToCartesian = (centerX, centerY, radius, angleInDegrees) => {
+      const angleInRadians = (angleInDegrees - 90) * Math.PI / 180.0;
+      return {
+        x: centerX + (radius * Math.cos(angleInRadians)),
+        y: centerY + (radius * Math.sin(angleInRadians))
+      };
+    }
 
-    // Battery level styling
-    const levelClass = (batteryUsable <= 20) ? 'battery--low' : (batteryUsable <= 50 ? 'battery--medium' : 'battery--high');
+    const describeArc = (x, y, radius, startAngle, endAngle) => {
+      const start = polarToCartesian(x, y, radius, endAngle);
+      const end = polarToCartesian(x, y, radius, startAngle);
+      const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+      const d = [
+        "M", start.x, start.y,
+        "A", radius, radius, 0, largeArcFlag, 0, end.x, end.y
+      ].join(" ");
+      return d;
+    }
 
-    // Icons for the curved band
-    const stateIcons = [];
-    if (state == "asleep" || state == "suspended") stateIcons.push("power-sleep");
-    if (pluggedIn == "true") stateIcons.push("power-plug");
-    if (locked == "false") stateIcons.push("lock-open-variant");
-    if (sentry == "true") stateIcons.push("cctv");
-    if (windowsOpen == "true") stateIcons.push("window-open");
-    if (isUserPresent == "true") stateIcons.push("account");
-    if (doorsOpen == "true" || trunkOpen == "true" || frunkOpen == "true") stateIcons.push("car-door");
-    if (isClimateOn == "true" || isPreconditioning == "true") stateIcons.push("air-conditioner");
+    // Corner Gauge Renderer (without icons)
+    const renderCornerGauge = (position, value, max, text, subtext, colorClass, limitValue) => {
+      // Define angles for corners (0 is top, clockwise)
+      let startAngle, endAngle, centerAngle;
+      const arcLen = 60; // degrees span
 
-    const networkIcons = [];
-    if (state == "updating") networkIcons.push("cog-clockwise");
-    else if (isUpdateAvailable == "true") networkIcons.push("gift");
-    if (isHealthy != "true") networkIcons.push("alert-box");
-    networkIcons.push((state == "offline") ? "signal-off" : "signal");
+      switch (position) {
+        case 'top-left': startAngle = 285; endAngle = 345; centerAngle = 315; break;
+        case 'top-right': startAngle = 15; endAngle = 75; centerAngle = 45; break;
+        case 'bottom-right': startAngle = 105; endAngle = 165; centerAngle = 135; break;
+        case 'bottom-left': startAngle = 195; endAngle = 255; centerAngle = 225; break;
+      }
 
-    const allIcons = [...stateIcons, ...networkIcons];
-    const renderedIcons = allIcons.map((icon) => `<span class="mdi mdi-${icon} ${icon == "alert-box" ? "alert" : ""}"></span>`).join(' ');
+      const valClamped = Math.min(Math.max(value, 0), max);
+      const pct = valClamped / max;
+      const valAngleSpan = arcLen * pct;
 
-    const showPercentage = this.config.radialOptions?.showPercentage !== false;
+      let valStart, valEnd;
+      valStart = startAngle;
+      valEnd = startAngle + valAngleSpan;
+
+      const strokeWidth = 10;
+      const trackPath = describeArc(center, center, radius, startAngle, endAngle);
+      const valPath = describeArc(center, center, radius, valStart, valEnd);
+
+      // Position text on OUTSIDE of arc
+      const textRadius = radius + 35;
+      const textAngle = centerAngle;
+      const textPos = polarToCartesian(center, center, textRadius, textAngle);
+
+      // Rotation angles
+      let textRotation;
+
+      switch (position) {
+        case 'top-left':
+          textRotation = -45;
+          break;
+        case 'top-right':
+          textRotation = 45;
+          break;
+        case 'bottom-right':
+          textRotation = -45;
+          break;
+        case 'bottom-left':
+          textRotation = 45;
+          break;
+      }
+
+      // Limit marker for battery gauge
+      let limitMarker = '';
+      if (limitValue && limitValue > 0 && limitValue < 100) {
+        const limitPct = limitValue / max;
+        const limitAngleSpan = arcLen * limitPct;
+        const limitAngle = startAngle + limitAngleSpan;
+        const limitPos = polarToCartesian(center, center, radius, limitAngle);
+
+        limitMarker = `
+          <circle cx="${limitPos.x}" cy="${limitPos.y}" r="4" fill="rgba(255,255,255,0.7)" stroke="rgba(0,0,0,0.9)" stroke-width="1.5"/>
+        `;
+      }
+
+      return `
+            <g class="corner-gauge ${position}">
+                <!-- Track -->
+                <path d="${trackPath}" class="gauge-bg" stroke-width="${strokeWidth}" fill="none" stroke-linecap="round"/>
+                <!-- Value -->
+                <path d="${valPath}" class="gauge-fg ${colorClass}" stroke-width="${strokeWidth}" fill="none" stroke-linecap="round"/>
+                ${limitMarker}
+                
+                <!-- Text (outside, rotated) -->
+                <g transform="translate(${textPos.x}, ${textPos.y}) rotate(${textRotation})">
+                    <foreignObject x="-35" y="-25" width="70" height="50">
+                        <div class="corner-content" style="width: 70px; height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+                            <span class="bright" style="font-size: 18px; font-weight: 700; line-height: 1; text-shadow: 0 1px 3px rgba(0,0,0,0.8);">${text}</span>
+                            ${subtext ? `<span class="dim" style="font-size: 9px; text-transform: uppercase; margin-top: 2px; opacity: 0.7;">${subtext}</span>` : ''}
+                        </div>
+                    </foreignObject>
+                </g>
+            </g>
+        `;
+    };
+
+    // Data preparation
     const batteryUnit = this.config.rangeDisplay === "%" ? "%" : (this.config.imperial ? "mi" : "km");
-    const batteryBigNumber = this.config.rangeDisplay === "%" ? batteryUsable : idealRange;
+    const batteryVal = this.config.rangeDisplay === "%" ? batteryUsable : idealRange;
 
-    const carOverlay = showCar ? `
-      <div class="car-overlay" style="position:absolute; left:0; right:0; bottom:-6px; display:flex; justify-content:center; z-index:2;">
-        <div style="background-image:url('${teslaImageUrl}'); background-repeat:no-repeat; background-position:center bottom; background-size:${Math.round(side * 0.6)}px auto; width:${Math.round(side * 0.7)}px; height:${Math.round(side * 0.4)}px; opacity:${imageOpacity};"></div>
-      </div>` : '';
+    const isF = this.config.imperial;
+    const tempMax = isF ? 120 : 50; // Adjusted max temps
+    const rangeMax = isF ? 350 : 560;
 
-    const percentageOverlay = showPercentage ? `
-      <div class="percentage-overlay" style="position:absolute; bottom:-28px; left:50%; transform:translateX(-50%); z-index:5; text-align:center;">
-        <div class="percentage-text" style="background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); border-radius: 9999px; padding: 4px 10px; display:inline-block;">
-          <span class="bright medium light">${batteryBigNumber}</span><span class="normal small">${batteryUnit}</span>${this.config.showChargeLimit && this.config.rangeDisplay === "%" && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100 ? `<span style="font-size: 0.6em; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>` : ''}
-        </div>
-      </div>` : '';
+    // TL: Battery (with charge limit marker)
+    const tl = renderCornerGauge('top-left', batteryUsable, 100, `${Math.round(batteryUsable)}%`, null, batteryUsable < 20 ? 'red' : 'green', chargeLimitSOC);
 
-    // Calculate curved icon positions
-    const iconRadius = radius + (ringThickness / 2) + (iconBandThickness);
-    const iconPositions = allIcons.map((icon, index) => {
-      const angleStep = 60 / Math.max(1, allIcons.length - 1); // 60 degree arc at top
-      const angle = -30 + (index * angleStep); // Start at -30deg, end at +30deg
-      const radian = (angle * Math.PI) / 180;
-      const x = radius + iconRadius * Math.sin(radian);
-      const y = radius - iconRadius * Math.cos(radian);
-      return { icon, x, y, angle };
-    });
+    // TR: Inside Temp
+    const tr = renderCornerGauge('top-right', inside_temp, tempMax, `${Math.round(inside_temp)}°`, 'Inside', 'orange');
 
-    const curvedIcons = iconPositions.map(({ icon, x, y }) =>
-      `<div class="curved-icon" style="position:absolute; left:${x - 9}px; top:${y - 9}px; width:18px; height:18px; display:flex; align-items:center; justify-content:center;">
-        <span class="mdi mdi-${icon} ${icon == "alert-box" ? "alert" : ""}" style="font-size:12px;"></span>
-      </div>`
-    ).join('');
+    // BL: Range
+    const bl = renderCornerGauge('bottom-left', idealRange, rangeMax, `${Math.round(idealRange)}`, isF ? 'mi' : 'km', 'blue');
+
+    // BR: Outside Temp or Charging
+    let br;
+    if (charging) {
+      const timeStr = formatRemainingShort(timeToFull);
+      br = renderCornerGauge('bottom-right', 100, 100, 'Charging', timeStr, 'green');
+    } else {
+      br = renderCornerGauge('bottom-right', outside_temp, tempMax, `${Math.round(outside_temp)}°`, 'Outside', 'blue');
+    }
 
     wrapper.innerHTML = `
-      <div class="radial-mode" style="width:${side}px; position: relative; padding-bottom: 36px;">
+      <div class="radial-mode" style="width:${side}px; height:${side}px; position: relative;">
         <link href="https://cdn.materialdesignicons.com/4.8.95/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
-        <div class="radial-wrap" style="position: relative; width:${side}px; height:${side}px; overflow: visible;">
-          ${mapImg ? `<img class="map-center" src="${mapImg}" style="width:${side}px; height:${side}px; border-radius:50%; object-fit: cover; z-index:1; position: relative;"/>` : `<div class="map-placeholder" style="width:${side}px; height:${side}px; border-radius:50%; background: rgba(100,100,100,0.3); z-index:1; position: relative;"></div>`}
-          <svg class="radial-ring ${levelClass}" width="${side}" height="${side}" viewBox="0 0 ${side} ${side}" style="position:absolute; top:0; left:0; z-index:3;">
-            <circle class="radial-bg" cx="${radius}" cy="${radius}" r="${radius - ringThickness / 2}" stroke-width="${ringThickness}" fill="none" />
-            <circle class="radial-fg" cx="${radius}" cy="${radius}" r="${radius - ringThickness / 2}" stroke-width="${ringThickness}" fill="none" stroke-dasharray="${progressArc} ${remainingArc}" transform="rotate(-90 ${radius} ${radius})" stroke-linecap="round" />
-          </svg>
-          ${carOverlay}
-          ${percentageOverlay}
-          <div class="icon-band" style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:4; pointer-events:none;">
-            ${curvedIcons}
-          </div>
+        
+        <!-- Center Map -->
+        <div class="map-container" style="
+            width:${mapSize}px; height:${mapSize}px; 
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+            border-radius: 50%; overflow: hidden; 
+            border: 3px solid rgba(255,255,255,0.15);
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            z-index: 10;
+        ">
+             ${mapImg ? `<img src="${mapImg}" style="width:100%; height:100%; object-fit: cover;"/>` : `<div style="width:100%; height:100%; background: #222; display:flex; align-items:center; justify-content:center;"><span class="mdi mdi-map-marker-off" style="font-size: 30px; opacity: 0.5;"></span></div>`}
         </div>
+        
+        <!-- SVG Layer for Gauges -->
+        <svg width="${side}" height="${side}" style="position: absolute; top: 0; left: 0; z-index: 5; overflow: visible;">
+            ${tl}
+            ${tr}
+            ${bl}
+            ${br}
+        </svg>
+        
       </div>`;
   },
+
+
 
   generateSmartDom: function (wrapper, data) {
     console.log(this.name + ": generateSmartDom called with data: ", data);
