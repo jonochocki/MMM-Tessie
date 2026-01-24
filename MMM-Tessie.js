@@ -72,6 +72,11 @@ Module.register("MMM-Tessie", {
       charging: true,
       temperature: true,
       schedule: true,
+      // Uses MagicMirror default `weather` module notification WEATHER_UPDATED
+      coldWeatherPrecondition: true,
+      coldWeatherPreconditionThresholdF: 20,
+      // Ignore weather data older than this (minutes)
+      coldWeatherPreconditionMaxAgeMins: 120,
       tempThresholds: {
         // Defaults are in user's configured units
         cabinHot: 90,
@@ -111,6 +116,13 @@ Module.register("MMM-Tessie", {
       lastChangeAt: 0
     };
 
+    // Weather module integration (MagicMirror default `weather`)
+    this.weatherState = {
+      outsideTempF: null,
+      updatedAt: null,
+      source: null
+    };
+
     // Add a minute timer to force updateDom for relative time strings (e.g. "15m remaining")
     // This ensures the display doesn't get stale between API polls
     setInterval(() => {
@@ -143,6 +155,44 @@ Module.register("MMM-Tessie", {
         this.bootstrapTimer = null;
       }
     }, 15000);
+  },
+
+  // Receive notifications from other MagicMirror modules (e.g. default `weather`)
+  notificationReceived: function (notification, payload, sender) {
+    if (notification !== "WEATHER_UPDATED") return;
+    if (!payload || !payload.currentWeather) return;
+
+    const cw = payload.currentWeather;
+    const candidateTemps = [
+      cw.temperature,
+      cw.temp,
+      cw.currentTemperature,
+      cw.temperatureValue
+    ];
+    let t = null;
+    for (let i = 0; i < candidateTemps.length; i++) {
+      const v = candidateTemps[i];
+      if (v == null) continue;
+      const n = typeof v === "number" ? v : parseFloat(v);
+      if (!isNaN(n)) {
+        t = n;
+        break;
+      }
+    }
+    if (t == null) return;
+
+    // Default weather module sends imperial/metric based on its own config.units.
+    // We can't read that directly here; assume Fahrenheit if value looks like Fahrenheit,
+    // otherwise treat it as Celsius and convert to Fahrenheit.
+    const looksF = t > 45; // heuristic: if it's > 45°, it's very likely Fahrenheit for typical outdoor temps
+    const tF = looksF ? t : (t * 9 / 5 + 32);
+
+    this.weatherState.outsideTempF = tF;
+    this.weatherState.updatedAt = Date.now();
+    this.weatherState.source = payload.providerName || payload.provider || (sender && sender.name) || "weather";
+
+    // Weather updates are infrequent; render promptly
+    this.updateDom(300);
   },
 
   openTessieConnection: function () {
@@ -410,6 +460,27 @@ Module.register("MMM-Tessie", {
       } else if (insideTempC <= coldC) {
         const disp = Math.round(unitIsF ? (insideTempC * 9 / 5 + 32) : insideTempC);
         activeItems.push({ id: 'tempCold', priority: 90, type: 'critical', icon: 'mdi-snowflake-alert', text: `Cabin Cold ${disp}°`, subtext: 'Check Interior' });
+      }
+    }
+
+    // 2b. Reminder: Cold outside (from MagicMirror weather module, not vehicle sensor)
+    if (opts.coldWeatherPrecondition !== false) {
+      const wx = this.weatherState;
+      const maxAgeMs = (typeof opts.coldWeatherPreconditionMaxAgeMins === 'number' ? opts.coldWeatherPreconditionMaxAgeMins : 120) * 60 * 1000;
+      const thresholdF = (typeof opts.coldWeatherPreconditionThresholdF === 'number' ? opts.coldWeatherPreconditionThresholdF : 20);
+
+      const wxOk = wx && typeof wx.outsideTempF === 'number' && !isNaN(wx.outsideTempF) && wx.updatedAt && (now - wx.updatedAt) <= maxAgeMs;
+      const precondActive = (data.isPreconditioning === 'true' || data.isClimateOn === 'true');
+
+      if (wxOk && wx.outsideTempF < thresholdF && !precondActive && data.state !== 'driving') {
+        activeItems.push({
+          id: 'coldWxPrecond',
+          priority: 85,
+          type: 'warning',
+          icon: 'mdi-snowflake-alert',
+          text: `Cold outside (${Math.round(wx.outsideTempF)}°F)`,
+          subtext: 'Precondition battery before driving'
+        });
       }
     }
 
