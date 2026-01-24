@@ -246,6 +246,20 @@ Module.register("MMM-Tessie", {
     var tpms_pressure_rl = this.subscriptions["tpms_pressure_rl"].value ? this.subscriptions["tpms_pressure_rl"].value : 0;
     var tpms_pressure_rr = this.subscriptions["tpms_pressure_rr"].value ? this.subscriptions["tpms_pressure_rr"].value : 0;
 
+    // Create raw data object for intelligence (with temps in Celsius)
+    const rawData = {
+      carName, state, latitude, longitude, battery, chargeLimitSOC,
+      chargeStart, timeToFull, pluggedIn, energyAdded, locked, sentry,
+      idealRange, estRange, speed, outside_temp, inside_temp, odometer,
+      windowsOpen, batteryUsable, isClimateOn, isHealthy, charging,
+      doorsOpen, trunkOpen, frunkOpen, isUserPresent, isUpdateAvailable,
+      isPreconditioning, geofence, tpms_pressure_fl, tpms_pressure_fr, tpms_pressure_rl, tpms_pressure_rr
+    };
+
+    // Update intelligence decision state BEFORE unit conversions
+    this.updateIntelligenceDecision(rawData);
+
+    // Now convert to user's preferred units for display
     if (!this.config.imperial) {
       idealRange = (idealRange * 1.0).toFixed(0);
       estRange = (estRange * 1.0).toFixed(0);
@@ -285,8 +299,6 @@ Module.register("MMM-Tessie", {
 
     console.log(this.name + ": Generating DOM with data: ", data);
 
-    // Update intelligence decision state before rendering
-    this.updateIntelligenceDecision(data);
     const mode = (this.config.displayMode || 'graphic').toLowerCase();
 
     if (mode === 'map') {
