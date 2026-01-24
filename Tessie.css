@@ -221,13 +221,10 @@
 /* Graphic Redesign - Depth UI */
 .graphic-container {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden; /* Changed from visible to prevent platform overflow */
-  margin: 0;
+  display: block; /* Changed from flex to block */
+  margin: 0 auto; /* Center the container */
   padding: 0;
+  overflow: hidden;
 }
 
 .bg-soc {
