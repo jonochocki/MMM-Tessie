@@ -128,6 +128,21 @@ Module.register("MMM-Tessie", {
 
     this.sendSocketNotification('TESSIE_CONFIG', this.config);
     this.configSentAt = Date.now();
+
+    // Retry config until any data arrives (covers refresh races)
+    if (this.bootstrapTimer) {
+      clearInterval(this.bootstrapTimer);
+    }
+    this.bootstrapTimer = setInterval(() => {
+      if (!this.hasAnyData()) {
+        console.log(this.name + ': No data yet; retrying Tessie config');
+        this.sendSocketNotification('TESSIE_CONFIG', this.config);
+        this.configSentAt = Date.now();
+      } else {
+        clearInterval(this.bootstrapTimer);
+        this.bootstrapTimer = null;
+      }
+    }, 15000);
   },
 
   openTessieConnection: function () {
@@ -138,6 +153,10 @@ Module.register("MMM-Tessie", {
   socketNotificationReceived: function (notification, payload) {
     console.log(this.name + ": socketNotificationReceived - Notification: " + notification);
     if (notification === 'TESSIE_STATE') {
+      if (this.bootstrapTimer) {
+        clearInterval(this.bootstrapTimer);
+        this.bootstrapTimer = null;
+      }
       if (payload && payload.values) {
         console.log(this.name + ": TESSIE_STATE received with " + Object.keys(payload.values).length + " fields");
         const now = Date.now();
@@ -157,6 +176,10 @@ Module.register("MMM-Tessie", {
         console.log(this.name + ': TESSIE_STATE - No payload');
       }
     }
+  },
+
+  hasAnyData: function () {
+    return Object.values(this.subscriptions || {}).some((entry) => entry && entry.time);
   },
 
   triggerDomUpdate: function () {
@@ -197,7 +220,7 @@ Module.register("MMM-Tessie", {
     }
 
     // Check if we have received any data yet (avoid falsey state values)
-    const hasAnyData = Object.values(this.subscriptions || {}).some((entry) => entry && entry.time);
+    const hasAnyData = this.hasAnyData();
     if (!hasAnyData) {
       const now = Date.now();
       // Retry config if we never received data (e.g., helper missed config on refresh)
