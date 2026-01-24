@@ -519,9 +519,8 @@ Module.register("MMM-Tessie", {
       charging, timeToFull, pluggedIn, isUpdateAvailable
     } = data;
 
-    // Sizing from config
-    const layWidth = this.config.sizeOptions?.width ?? 400; // Reduced default from 450
-    const layHeight = this.config.sizeOptions?.height ?? 280; // Reduced default from 300
+    // Sizing from config - now used as max constraints, not fixed sizes
+    const maxWidth = this.config.sizeOptions?.width ?? 400;
     const topOffset = this.config.sizeOptions?.topOffset ?? 0;
 
     // Image compositor setup
@@ -530,10 +529,9 @@ Module.register("MMM-Tessie", {
     const teslaOptions = this.config.carImageOptions?.options ?? this.subscriptions["image_options"]?.value ?? "PPSW,W32B,SLR1";
     const teslaImageWidth = 720;
     const teslaImageUrl = `https://static-assets.tesla.com/v1/compositor/?model=${teslaModel}&view=${teslaView}&size=${teslaImageWidth}&options=${teslaOptions}&bkba_opt=1`;
-    const imageOpacity = this.config.carImageOptions?.imageOpacity ?? 1.0; // Higher default for the new design
-    const imageScale = this.config.carImageOptions?.scale ?? 1.0;
+    const imageOpacity = this.config.carImageOptions?.imageOpacity ?? 1.0;
 
-    // formatting helpers
+    // Formatting helpers
     const batteryBigNumber = this.config.rangeDisplay === "%" ? Math.round(batteryUsable) : Math.round(idealRange);
     const tempDisplay = Math.round(inside_temp || 0);
     const unitIsF = !!this.config.imperial;
@@ -544,7 +542,6 @@ Module.register("MMM-Tessie", {
 
     // Status bar icon logic
     const lockIcon = locked === "true" ? "mdi-lock" : "mdi-lock-open-variant";
-    const sentryClass = sentry === "true" ? "status-item sentry-active" : "status-item";
     const connectionIcon = state === "offline" ? "mdi-wifi-off" : (state === "asleep" ? "mdi-sleep" : "mdi-wifi");
 
     // Intelligence rendering
@@ -557,13 +554,13 @@ Module.register("MMM-Tessie", {
       const isCritical = item.type === 'critical' || item.type === 'warning';
       const color = isCritical ? '#ff453a' : 'rgba(255,255,255,0.6)';
       
-      return `<div style="font-size: 0.9rem; color: ${color}; margin-bottom: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">
-        ${isCritical ? '<span class="mdi mdi-alert-circle" style="margin-right: 4px;"></span>' : ''}${item.text}
+      return `<div class="intelligence-alert ${isCritical ? 'critical' : ''}">
+        ${isCritical ? '<span class="mdi mdi-alert-circle"></span>' : ''}${item.text}
       </div>`;
     };
 
     wrapper.innerHTML = `
-      <div class="graphic-container" style="width: ${layWidth}px; height: ${layHeight}px; margin-top: ${topOffset}px;">
+      <div class="graphic-container" style="max-width: ${maxWidth}px; margin-top: ${topOffset}px;">
         <link href="https://cdn.materialdesignicons.com/7.4.47/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
         
         <!-- Layer 1: Background SOC -->
@@ -582,16 +579,11 @@ Module.register("MMM-Tessie", {
         <!-- Layer 4: Car Subject -->
         <div class="car-subject" style="
           background-image: url('${teslaImageUrl}'); 
-          background-size: contain;
-          background-repeat: no-repeat;
-          background-position: center;
-          width: ${80 * imageScale}%; /* Reduced default scale from 90% */
-          height: 70%; /* Reduced height from 80% to reveal more SOC */
           opacity: ${imageOpacity};
         "></div>
         
         <!-- Layer 5: Intelligence & Status Bar -->
-        <div style="position: absolute; bottom: 20px; display: flex; flex-direction: column; align-items: center; width: 100%;">
+        <div class="status-wrapper">
           ${renderIntelligence()}
           <div class="modern-status-bar">
             <div class="status-item">
