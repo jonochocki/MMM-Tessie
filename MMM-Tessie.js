@@ -552,8 +552,7 @@ Module.register("MMM-Tessie", {
       charging, timeToFull, pluggedIn, isUpdateAvailable
     } = data;
 
-    // Sizing from config - now used as max constraints, not fixed sizes
-    const maxWidth = this.config.sizeOptions?.width ?? 400;
+    // Sizing from config
     const topOffset = this.config.sizeOptions?.topOffset ?? 0;
 
     // Image compositor setup
@@ -593,42 +592,28 @@ Module.register("MMM-Tessie", {
     };
 
     wrapper.innerHTML = `
-      <div class="graphic-container" style="max-width: ${maxWidth}px; margin-top: ${topOffset}px;">
+      <div class="graphic-container" style="margin-top: ${topOffset}px;">
         <link href="https://cdn.materialdesignicons.com/7.4.47/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
         
-        <div class="graphic-grid">
-          <!-- LEFT COLUMN: Battery + Vehicle -->
-          <div class="vehicle-section">
-            <!-- Layer 1: Background SOC -->
+        <div class="graphic-content">
+          <div class="graphic-left">
+            <!-- Battery + Vehicle stack -->
             <div class="bg-soc ${charging ? 'charging-pulse' : ''}">${batteryBigNumber}</div>
-            
-            <!-- Layer 2: Spotlight Platform -->
             <div class="car-platform"></div>
-            
-            <!-- Layer 3: Car Subject -->
             <div class="car-subject" style="
               background-image: url('${teslaImageUrl}'); 
               opacity: ${imageOpacity};
             "></div>
           </div>
-          
-          <!-- RIGHT COLUMN: Map Circle -->
-          ${showMap ? `
-            <div class="map-section">
-              <div class="map-circle">
-                <img src="${mapImg}" alt="Location Map" />
-              </div>
+
+          <div class="graphic-right">
+            <div class="map-circle ${showMap ? '' : 'map-circle--empty'}">
+              ${showMap ? `<img src="${mapImg}" alt="Location Map" />` : '<span class="mdi mdi-map-marker-off"></span>'}
             </div>
-          ` : `
-            <div class="map-section">
-              <div class="map-circle map-placeholder">
-                <span class="mdi mdi-map-marker-off"></span>
-              </div>
-            </div>
-          `}
+          </div>
         </div>
-        
-        <!-- BOTTOM: Status Bar (spans full width) -->
+
+        <!-- Bottom Icons -->
         <div class="status-wrapper">
           ${renderIntelligence()}
           <div class="modern-status-bar">
