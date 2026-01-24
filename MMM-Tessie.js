@@ -195,9 +195,9 @@ Module.register("MMM-Tessie", {
       return wrapper;
     }
 
-    // Check if we have received data yet
-    const hasData = this.subscriptions["state"].value;
-    if (!hasData || hasData === null) {
+    // Check if we have received any data yet (avoid falsey state values)
+    const hasAnyData = Object.values(this.subscriptions || {}).some((entry) => entry && entry.time);
+    if (!hasAnyData) {
       const wrapper = document.createElement('div');
       wrapper.className = 'tessie-loading';
       wrapper.innerHTML = `
