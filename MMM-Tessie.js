@@ -181,15 +181,24 @@ Module.register("MMM-Tessie", {
     }
     if (t == null) return;
 
-    // Default weather module sends imperial/metric based on its own config.units.
-    // We can't read that directly here; assume Fahrenheit if value looks like Fahrenheit,
-    // otherwise treat it as Celsius and convert to Fahrenheit.
-    const looksF = t > 45; // heuristic: if it's > 45°, it's very likely Fahrenheit for typical outdoor temps
-    const tF = looksF ? t : (t * 9 / 5 + 32);
+    // Default `weather` module sends imperial/metric based on its config.units.
+    // Prefer explicit hints; fall back to MagicMirror global config.units (most common).
+    const mmUnits = (typeof config !== "undefined" && config && typeof config.units === "string") ? config.units : null;
+    const hintedUnits =
+      (typeof cw.tempUnits === "string" ? cw.tempUnits : null) ||
+      (typeof cw.units === "string" ? cw.units : null) ||
+      (typeof cw.unit === "string" ? cw.unit : null) ||
+      (typeof payload.units === "string" ? payload.units : null);
+
+    const units = (hintedUnits || mmUnits || "").toLowerCase();
+    const weatherIsImperial = units === "imperial";
+    const tF = weatherIsImperial ? t : (t * 9 / 5 + 32);
 
     this.weatherState.outsideTempF = tF;
     this.weatherState.updatedAt = Date.now();
     this.weatherState.source = payload.providerName || payload.provider || (sender && sender.name) || "weather";
+
+    console.log(this.name + `: WEATHER_UPDATED received (${this.weatherState.source}) -> ${Math.round(tF)}°F`);
 
     // Weather updates are infrequent; render promptly
     this.updateDom(300);
