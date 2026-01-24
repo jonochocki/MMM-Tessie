@@ -221,7 +221,7 @@
 /* Graphic Redesign - Depth UI - Two Column Layout */
 .graphic-container {
   position: relative;
-  width: 450px;
+  width: 350px;
   max-width: 100%;
   margin: 0 auto;
   padding: 0;
@@ -234,7 +234,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0 1rem 3.5rem;
+  padding: 0 0 3.5rem;
   box-sizing: border-box;
 }
 
@@ -353,8 +353,9 @@
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 0.75rem;
+  width: 100%;
   padding: 0.4rem 1.2rem;
   background: rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(20px);
@@ -362,6 +363,31 @@
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.modern-status-bar .status-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.modern-status-bar .status-group--right {
+  justify-content: flex-end;
+}
+
+.status-item.status-item--temp {
+  gap: 0.5rem;
+}
+
+.status-item .mdi.tessie-precond {
+  color: rgba(255, 255, 255, 0.9);
+  opacity: 0.9;
+}
+
+.status-item.charging-active .mdi {
+  color: rgba(48, 209, 88, 0.95);
+  filter: drop-shadow(0 0 8px rgba(48, 209, 88, 0.55));
 }
 
 .status-item {

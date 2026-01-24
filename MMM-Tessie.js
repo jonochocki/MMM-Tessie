@@ -579,8 +579,9 @@ Module.register("MMM-Tessie", {
 
     const {
       carName, state, battery, batteryUsable, chargeLimitSOC,
-      locked, sentry, outside_temp, inside_temp, idealRange,
-      charging, timeToFull, pluggedIn, isUpdateAvailable
+      sentry, outside_temp, inside_temp, idealRange,
+      charging, timeToFull, pluggedIn, isUpdateAvailable,
+      isClimateOn, isPreconditioning, windowsOpen, doorsOpen, trunkOpen, frunkOpen
     } = data;
 
     // Sizing from config
@@ -604,8 +605,23 @@ Module.register("MMM-Tessie", {
     const showMap = mapImg && this.config.mapOptions?.enabled !== false;
 
     // Status bar icon logic
-    const lockIcon = locked === "true" ? "mdi-lock" : "mdi-lock-open-variant";
     const connectionIcon = state === "offline" ? "mdi-wifi-off" : (state === "asleep" ? "mdi-sleep" : "mdi-wifi");
+    const precondActive = (isPreconditioning === "true");
+    const climateActive = (isClimateOn === "true");
+    const anyDoorOpen = (doorsOpen === "true" || trunkOpen === "true" || frunkOpen === "true");
+
+    const activeIcons = [];
+    if (charging === "true") activeIcons.push({ key: "charging", icon: "mdi-lightning-bolt", cls: "charging-active" });
+    else if (pluggedIn === "true") activeIcons.push({ key: "plugged", icon: "mdi-power-plug", cls: "" });
+    if (sentry === "true") activeIcons.push({ key: "sentry", icon: "mdi-shield-eye", cls: "sentry-active" });
+    if (windowsOpen === "true") activeIcons.push({ key: "windows", icon: "mdi-window-open", cls: "" });
+    if (anyDoorOpen) activeIcons.push({ key: "doors", icon: "mdi-car-door", cls: "" });
+    if (climateActive && !precondActive) activeIcons.push({ key: "climate", icon: "mdi-fan", cls: "" });
+    if (isUpdateAvailable === "true") activeIcons.push({ key: "update", icon: "mdi-download-circle-outline", cls: "" });
+
+    const activeIconsHtml = activeIcons
+      .map((it) => `<div class="status-item ${it.cls || ""}" data-key="${it.key}"><span class="mdi ${it.icon}"></span></div>`)
+      .join("");
 
     // Intelligence rendering
     const renderIntelligence = () => {
@@ -648,22 +664,18 @@ Module.register("MMM-Tessie", {
         <div class="status-wrapper">
           ${renderIntelligence()}
           <div class="modern-status-bar">
-            <div class="status-item">
-              <span class="bright">${tempDisplay}°${unitIsF ? 'F' : 'C'}</span>
+            <div class="status-group status-group--left">
+              <div class="status-item status-item--temp">
+                <span class="bright">${tempDisplay}°${unitIsF ? 'F' : 'C'}</span>
+                ${precondActive ? '<span class="mdi mdi-air-conditioner tessie-precond"></span>' : ''}
+              </div>
             </div>
-            
-            <div class="status-separator"></div>
-            
-            <div class="status-item">
-              <span class="mdi ${lockIcon}"></span>
-            </div>
-            
-            <div class="status-item ${sentry === 'true' ? 'sentry-active' : ''}">
-              <span class="mdi mdi-shield-eye"></span>
-            </div>
-            
-            <div class="status-item">
-              <span class="mdi ${connectionIcon}"></span>
+
+            <div class="status-group status-group--right">
+              ${activeIconsHtml}
+              <div class="status-item status-item--connection">
+                <span class="mdi ${connectionIcon}"></span>
+              </div>
             </div>
           </div>
         </div>
