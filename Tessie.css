@@ -230,7 +230,7 @@
   position: relative;
   width: 100%;
   display: flex;
-  align-items: stretch;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
   padding-bottom: 3.5rem;
@@ -240,9 +240,8 @@
 .graphic-left {
   position: relative;
   flex: 1 1 55%;
-  min-height: 180px;
+  min-height: 160px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
@@ -256,43 +255,47 @@
   box-sizing: border-box;
 }
 
+/* Large background SOC - positioned behind car */
 .bg-soc {
-  position: relative;
-  font-size: 8rem;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -55%);
+  font-size: 7rem;
   font-weight: 200;
-  color: rgba(255, 255, 255, 0.22);
-  line-height: 0.85;
+  color: rgba(255, 255, 255, 0.2);
+  line-height: 1;
   z-index: 1;
   pointer-events: none;
   font-family: "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
   letter-spacing: -0.08em;
   white-space: nowrap;
-  margin-bottom: -2rem;
 }
 
+/* Soft glow platform under car - extends to status bar */
 .car-platform {
   position: absolute;
-  bottom: 0;
+  bottom: -3.5rem;
   left: 50%;
   transform: translateX(-50%);
-  width: 120%;
-  height: 40%;
-  background: radial-gradient(ellipse at center bottom, rgba(255, 255, 255, 0.15) 0%, transparent 70%);
+  width: 140%;
+  height: 80%;
+  background: radial-gradient(ellipse 70% 50% at center 85%, rgba(255, 255, 255, 0.12) 0%, transparent 100%);
   z-index: 2;
   pointer-events: none;
 }
 
+/* Car image - centered over SOC */
 .car-subject {
   position: relative;
   width: 100%;
-  min-height: 120px;
-  height: auto;
+  min-height: 100px;
   aspect-ratio: 16 / 9;
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
   z-index: 3;
-  filter: drop-shadow(0 12px 25px rgba(0,0,0,0.5));
+  filter: drop-shadow(0 10px 20px rgba(0,0,0,0.5));
 }
 
 .map-circle {
