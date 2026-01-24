@@ -531,10 +531,14 @@ Module.register("MMM-Tessie", {
     const imageOpacity = this.config.carImageOptions?.imageOpacity ?? 1.0; // Higher default for the new design
     const imageScale = this.config.carImageOptions?.scale ?? 1.0;
 
-    // Formatting helpers
+    // formatting helpers
     const batteryBigNumber = this.config.rangeDisplay === "%" ? Math.round(batteryUsable) : Math.round(idealRange);
     const tempDisplay = Math.round(inside_temp || 0);
     const unitIsF = !!this.config.imperial;
+
+    // Map logic
+    const mapImg = this.subscriptions["map_image"]?.value;
+    const showMap = mapImg && this.config.mapOptions?.enabled !== false;
 
     // Status bar icon logic
     const lockIcon = locked === "true" ? "mdi-lock" : "mdi-lock-open-variant";
@@ -566,19 +570,26 @@ Module.register("MMM-Tessie", {
         <!-- Layer 2: Spotlight Platform -->
         <div class="car-platform"></div>
         
-        <!-- Layer 3: Car Subject -->
+        <!-- Layer 3: Map Preview (Optional) -->
+        ${showMap ? `
+          <div class="map-preview-container">
+            <img src="${mapImg}" alt="Location Map" />
+          </div>
+        ` : ''}
+        
+        <!-- Layer 4: Car Subject -->
         <div class="car-subject" style="
           background-image: url('${teslaImageUrl}'); 
           background-size: contain;
           background-repeat: no-repeat;
           background-position: center;
-          width: ${100 * imageScale}%;
-          height: 100%;
+          width: ${90 * imageScale}%; /* Reduced default scale */
+          height: 80%; /* Reduced height to keep it from dominating */
           opacity: ${imageOpacity};
         "></div>
         
-        <!-- Layer 4: Intelligence & Status Bar -->
-        <div style="position: absolute; bottom: 15px; display: flex; flex-direction: column; align-items: center; width: 100%;">
+        <!-- Layer 5: Intelligence & Status Bar -->
+        <div style="position: absolute; bottom: 20px; display: flex; flex-direction: column; align-items: center; width: 100%;">
           ${renderIntelligence()}
           <div class="modern-status-bar">
             <div class="status-item">
