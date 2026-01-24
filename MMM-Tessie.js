@@ -194,6 +194,27 @@ Module.register("MMM-Tessie", {
       wrapper.innerHTML = 'Configure tessie.accessToken and tessie.vin in module config';
       return wrapper;
     }
+
+    // Check if we have received data yet
+    const hasData = this.subscriptions["state"].value;
+    if (!hasData || hasData === null) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'tessie-loading';
+      wrapper.innerHTML = `
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 1rem; padding: 2rem;">
+          <span class="mdi mdi-car" style="font-size: 3rem; opacity: 0.5; animation: pulse 2s infinite;"></span>
+          <span style="font-size: 1rem; opacity: 0.7;">Loading vehicle data...</span>
+        </div>
+        <style>
+          @keyframes pulse {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.7; }
+          }
+        </style>
+      `;
+      return wrapper;
+    }
+
     const kmToMiFixed = function (miles, fixed) {
       return (miles / 1.609344).toFixed(fixed);
     };
@@ -575,26 +596,39 @@ Module.register("MMM-Tessie", {
       <div class="graphic-container" style="max-width: ${maxWidth}px; margin-top: ${topOffset}px;">
         <link href="https://cdn.materialdesignicons.com/7.4.47/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
         
-        <!-- Layer 1: Background SOC -->
-        <div class="bg-soc ${charging ? 'charging-pulse' : ''}">${batteryBigNumber}</div>
-        
-        <!-- Layer 2: Spotlight Platform -->
-        <div class="car-platform"></div>
-        
-        <!-- Layer 3: Map Preview (Optional) -->
-        ${showMap ? `
-          <div class="map-preview-container">
-            <img src="${mapImg}" alt="Location Map" />
+        <div class="graphic-grid">
+          <!-- LEFT COLUMN: Battery + Vehicle -->
+          <div class="vehicle-section">
+            <!-- Layer 1: Background SOC -->
+            <div class="bg-soc ${charging ? 'charging-pulse' : ''}">${batteryBigNumber}</div>
+            
+            <!-- Layer 2: Spotlight Platform -->
+            <div class="car-platform"></div>
+            
+            <!-- Layer 3: Car Subject -->
+            <div class="car-subject" style="
+              background-image: url('${teslaImageUrl}'); 
+              opacity: ${imageOpacity};
+            "></div>
           </div>
-        ` : ''}
+          
+          <!-- RIGHT COLUMN: Map Circle -->
+          ${showMap ? `
+            <div class="map-section">
+              <div class="map-circle">
+                <img src="${mapImg}" alt="Location Map" />
+              </div>
+            </div>
+          ` : `
+            <div class="map-section">
+              <div class="map-circle map-placeholder">
+                <span class="mdi mdi-map-marker-off"></span>
+              </div>
+            </div>
+          `}
+        </div>
         
-        <!-- Layer 4: Car Subject -->
-        <div class="car-subject" style="
-          background-image: url('${teslaImageUrl}'); 
-          opacity: ${imageOpacity};
-        "></div>
-        
-        <!-- Layer 5: Intelligence & Status Bar -->
+        <!-- BOTTOM: Status Bar (spans full width) -->
         <div class="status-wrapper">
           ${renderIntelligence()}
           <div class="modern-status-bar">
