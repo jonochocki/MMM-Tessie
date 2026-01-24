@@ -512,226 +512,98 @@ Module.register("MMM-Tessie", {
     console.log(this.name + ": generateGraphicDom called with data: ", data);
 
     const {
-      carName, state, latitude, longitude, battery, chargeLimitSOC,
-      chargeStart, timeToFull, pluggedIn, energyAdded, locked, sentry,
-      idealRange, estRange, speed, outside_temp, inside_temp, odometer,
-      windowsOpen, batteryUsable, isClimateOn, isHealthy, charging,
-      doorsOpen, trunkOpen, frunkOpen, isUserPresent, isUpdateAvailable,
-      isPreconditioning, geofence, tpms_pressure_fl, tpms_pressure_fr, tpms_pressure_rl, tpms_pressure_rr
+      carName, state, battery, batteryUsable, chargeLimitSOC,
+      locked, sentry, outside_temp, inside_temp, idealRange,
+      charging, timeToFull, pluggedIn, isUpdateAvailable
     } = data;
 
-    const stateIcons = [];
-    if (state == "asleep" || state == "suspended")
-      stateIcons.push("power-sleep");
-    if (state == "suspended")
-      stateIcons.push("timer-sand");
-    if (state == "driving")
-      stateIcons.push("steering");
-    if (pluggedIn == "true")
-      stateIcons.push("power-plug");
-    if (locked == "false")
-      stateIcons.push("lock-open-variant");
-    if (sentry == "true")
-      stateIcons.push("cctv");
-    if (windowsOpen == "true")
-      stateIcons.push("window-open");
-    if (isUserPresent == "true")
-      stateIcons.push("account");
-    if (doorsOpen == "true" || trunkOpen == "true" || frunkOpen == "true")
-      stateIcons.push("car-door");
-    if (isClimateOn == "true" || isPreconditioning == "true")
-      stateIcons.push("air-conditioner");
+    // Sizing from config
+    const layWidth = this.config.sizeOptions?.width ?? 450;
+    const layHeight = this.config.sizeOptions?.height ?? 300; // Increased default height for better depth
+    const topOffset = this.config.sizeOptions?.topOffset ?? 0;
 
-    const networkIcons = [];
-    if (state == "updating")
-      networkIcons.push("cog-clockwise");
-    else if (isUpdateAvailable == "true")
-      networkIcons.push("gift");
-    if (isHealthy != "true")
-      networkIcons.push("alert-box");
-    networkIcons.push((state == "offline") ? "signal-off" : "signal");
-
-    // size options
-    // size of the icons + battery (above text)
-    const layWidth = this.config.sizeOptions?.width ?? 450; // px, default: 450
-    const layHeight = this.config.sizeOptions?.height ?? 203; // px, default: 203
-    // the battery images itself
-    const layBatWidth = this.config.sizeOptions?.batWidth ?? 250; // px, default: 250
-    const layBatHeight = this.config.sizeOptions?.batHeight ?? 75; // px, default: 75
-    const layBatTopMargin = this.config.displayOptions?.batteryBar?.topMargin ?? 0; // px, default: 0
-    // top offset - to reduce visual distance to the module above
-    const topOffset = this.config.sizeOptions?.topOffset ?? -40; // px, default: -40
-
-    // calculate scales
-    var layBatScaleWidth = layBatWidth / 250;  // scale factor normalized to 250
-    var layBatScaleHeight = layBatHeight / 75; // scale factor normalized to 75
-    var layScaleWidth = layWidth / 450;        // scale factor normalized to 450
-    var layScaleHeight = layHeight / 203;      // scale factor normalized to 203
-
+    // Image compositor setup
     const teslaModel = this.config.carImageOptions?.model ?? this.subscriptions["image_model"]?.value ?? "m3";
     const teslaView = this.config.carImageOptions?.view ?? "STUD_3QTR";
     const teslaOptions = this.config.carImageOptions?.options ?? this.subscriptions["image_options"]?.value ?? "PPSW,W32B,SLR1";
-
-    const teslaImageWidth = 720; // Tesla compositor stopped returning arbitrary-sized images, only steps of 250, 400, 720 etc work now. We use CSS to scale the image to the correct layout width
+    const teslaImageWidth = 720;
     const teslaImageUrl = `https://static-assets.tesla.com/v1/compositor/?model=${teslaModel}&view=${teslaView}&size=${teslaImageWidth}&options=${teslaOptions}&bkba_opt=1`;
-    const imageOffset = this.config.carImageOptions?.verticalOffset ?? 0;
-    const imageOpacity = this.config.carImageOptions?.imageOpacity ?? 0.4;
-    const imageWidth = layWidth * (this.config.carImageOptions?.scale ?? 1);
+    const imageOpacity = this.config.carImageOptions?.imageOpacity ?? 1.0; // Higher default for the new design
+    const imageScale = this.config.carImageOptions?.scale ?? 1.0;
 
-    const renderedStateIcons = stateIcons.map((icon) => `<span class="mdi mdi-${icon}"></span>`)
-    const renderedNetworkIcons = networkIcons.map((icon) => `<span class="mdi mdi-${icon}" ${icon == "alert-box" ? "style='color: #f66'" : ""}></span>`)
+    // Formatting helpers
+    const batteryBigNumber = this.config.rangeDisplay === "%" ? Math.round(batteryUsable) : Math.round(idealRange);
+    const tempDisplay = Math.round(inside_temp || 0);
+    const unitIsF = !!this.config.imperial;
 
-    const batteryReserveVisible = (battery - batteryUsable) > 1; // at <= 1% reserve the app and the car don't show it, so we won't either
+    // Status bar icon logic
+    const lockIcon = locked === "true" ? "mdi-lock" : "mdi-lock-open-variant";
+    const sentryClass = sentry === "true" ? "status-item sentry-active" : "status-item";
+    const connectionIcon = state === "offline" ? "mdi-wifi-off" : (state === "asleep" ? "mdi-sleep" : "mdi-wifi");
 
-    const batteryOverlayIcon = charging ? `<span class="mdi mdi-flash bright light"></span>` :
-      batteryReserveVisible ? `<span class="mdi mdi-snowflake bright light"></span>` : '';
-
-    const batteryBigNumber = this.config.rangeDisplay === "%" ? batteryUsable : idealRange;
-    const formatRemainingShort = function (remHrs) {
-      if (!remHrs || remHrs <= 0) return '';
-      const totalMins = Math.max(0, Math.round(remHrs * 60));
-      const hrs = Math.floor(totalMins / 60);
-      const mins = totalMins % 60;
-      const hPart = hrs > 0 ? (hrs + "h ") : '';
-      return hPart + mins + "m remaining";
-    };
-    const formatChargeStartLocal = function (isoStr) {
-      if (!isoStr || isoStr === '') return '';
-      const d = new Date(isoStr);
-      if (isNaN(d.getTime())) return '';
-      let hrs = d.getHours();
-      const mins = d.getMinutes();
-      const ampm = hrs >= 12 ? 'PM' : 'AM';
-      hrs = hrs % 12; if (hrs === 0) hrs = 12;
-      const mm = (mins < 10 ? '0' : '') + mins;
-      return `${hrs}:${mm}${ampm}`;
-    };
+    // Intelligence rendering
     const renderIntelligence = () => {
-      const topLevelEnabled = (this.config.intelligence !== false);
-      if (!topLevelEnabled) return '';
-      const id = this.intelState && this.intelState.currentId;
-      // Prefer explicit charging/schedule messages when active
-      if (id === 'chargingEta') {
-        return `<div class=\"intel-section\" style=\"text-align:center; margin-top: 8px;\"><div class=\"normal small\">${formatRemainingShort(timeToFull)}</div></div>`;
-      }
-      if (id === 'chargeScheduled') {
-        return `<div class=\"intel-section\" style=\"text-align:center; margin-top: 8px;\"><div class=\"normal small\">Charge starts at ${formatChargeStartLocal(chargeStart)}</div></div>`;
-      }
-      // Temperature messages: compute against user thresholds to avoid mislabeling
-      const unitIsF = !!this.config.imperial;
-      const tDisplay = inside_temp == null ? null : parseFloat(inside_temp);
-      if (tDisplay == null || isNaN(tDisplay)) return '';
-      const thresholdsUser = (this.config.intelligenceOptions?.tempThresholds || {});
-      const hotUser = typeof thresholdsUser.cabinHot === 'number' ? thresholdsUser.cabinHot : (unitIsF ? 90 : 32);
-      const coldUser = typeof thresholdsUser.cabinCold === 'number' ? thresholdsUser.cabinCold : (unitIsF ? 40 : 4);
-      const disp = `${Math.round(tDisplay)}°`;
-      if (tDisplay >= hotUser) {
-        return `<div class=\"intel-section\" style=\"text-align:center; margin-top: 8px;\"><div class=\"normal small\">Cabin hot (${disp})</div></div>`;
-      }
-      if (tDisplay <= coldUser) {
-        return `<div class=\"intel-section\" style=\"text-align:center; margin-top: 8px;\"><div class=\"normal small\">Cabin cold (${disp})</div></div>`;
-      }
-      return '';
+      if (this.config.intelligence === false) return '';
+      const items = this.intelState.activeItems || [];
+      if (items.length === 0) return '';
+      
+      const item = items[0];
+      const isCritical = item.type === 'critical' || item.type === 'warning';
+      const color = isCritical ? '#ff453a' : 'rgba(255,255,255,0.6)';
+      
+      return `<div style="font-size: 0.9rem; color: ${color}; margin-bottom: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">
+        ${isCritical ? '<span class="mdi mdi-alert-circle" style="margin-right: 4px;"></span>' : ''}${item.text}
+      </div>`;
     };
-    const batteryUnit = this.config.rangeDisplay === "%" ? "%" : (this.config.imperial ? "mi" : "km");
-
-    const showTemps = ((this.config.showTemps === "always") ||
-      (this.config.showTemps === "hvac_on" && (isClimateOn == "true" || isPreconditioning == "true"))) &&
-      (inside_temp && outside_temp);
-    const temperatureIcons = !showTemps ? "" :
-      `<span class="mdi mdi-car normal small"></span>
-       <span class="bright light small">${inside_temp}°</span>
-       &nbsp;&nbsp;
-       <span class="mdi mdi-earth normal small"></span>
-       <span class="bright light small">${outside_temp}°</span>`;
-
-    let batteryBarHtml = '';
-    if (this.config.displayOptions?.batteryBar?.visible ?? true) {
-      const innerWidthPx = (layBatWidth - 12);
-      const innerHeightPx = (layBatHeight - 12);
-      const usableWidthPx = Math.round(innerWidthPx * (Math.max(0, Math.min(100, batteryUsable)) / 100));
-      const reservePct = Math.max(0, (battery - batteryUsable));
-      const reserveWidthPx = Math.round(innerWidthPx * (reservePct / 100));
-      const limitLeftPx = Math.round(innerWidthPx * (Math.max(0, Math.min(100, chargeLimitSOC)) / 100));
-
-      // iOS-style color thresholds
-      const levelClass = (batteryUsable <= 20) ? 'battery--low' : (batteryUsable <= 50 ? 'battery--medium' : 'battery--high');
-
-      batteryBarHtml = `
-        <div class="battery ios26 ${levelClass} ${charging ? 'battery--charging' : ''}"
-             style="margin-left: ${(layWidth - layBatWidth) / 2}px;
-                    margin-top: ${layBatTopMargin}px;
-                    width: ${layBatWidth}px; height: ${layBatHeight}px;">
-          <div class="battery-body">
-            <div class="battery-inner" style="width: ${innerWidthPx}px; height: ${innerHeightPx}px;">
-              <div class="battery-fill" style="width: ${usableWidthPx}px; height: ${innerHeightPx}px;"></div>
-              <div class="battery-reserve" style="left: ${usableWidthPx}px; width: ${reserveWidthPx}px; height: ${innerHeightPx}px; ${batteryReserveVisible ? '' : 'visibility: hidden;'}"></div>
-              <div class="battery-limit" style="left: ${limitLeftPx}px; height: ${innerHeightPx}px; ${chargeLimitSOC === 0 ? 'visibility: hidden;' : ''}"></div>
-              <div class="battery-overlay medium">${batteryOverlayIcon}</div>
-            </div>
-          </div>
-          <div class="battery-terminal"></div>
-        </div>
-      `;
-    }
 
     wrapper.innerHTML = `
-      <div style="width: ${layWidth}px; height: ${layHeight}px;">
-        <link href="https://cdn.materialdesignicons.com/4.8.95/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
-        <div style="z-index: 1; 
-                    position: relative; top: 0px; left: 0px; 
-                    margin-top: ${topOffset}px;
-                    margin-bottom: -${layHeight}px;
-                    width: ${layWidth}px; height: ${layHeight}px; 
-                    opacity: ${imageOpacity}; 
-                    background-image: url('${teslaImageUrl}'); 
-                    background-size: ${imageWidth}px;;
-                    background-repeat: no-repeat;
-                    background-position: center ${imageOffset}px;"></div>
-        <div style="z-index: 2; position: relative; top: 0px; left: 0px; margin-top: ${topOffset}px;">
-
-          <!-- Percentage/range -->
-          <div style="margin-top: ${50 * layScaleHeight}px; 
-                      margin-left: auto; 
-                      text-align: center; 
-                      width: ${layWidth}px; 
-                      height: 70px">
-            <span class="bright large light">${batteryBigNumber}</span><span class="normal medium">${batteryUnit}</span>${this.config.showChargeLimit && this.config.rangeDisplay === "%" && chargeLimitSOC && chargeLimitSOC > 0 && chargeLimitSOC !== 100 ? `<span style="font-size: 0.6em; color: rgba(255,255,255,0.6); vertical-align: super;">/${chargeLimitSOC}</span>` : ''}
-            ${charging ? `<div class=\"normal small\" style=\"margin-top: 4px;\">${formatRemainingShort(timeToFull)}</div>` : ''}
-          </div>
-
-          <!-- State icons -->
-          <div style="float: left; 
-                      margin-top: -${65 * layScaleHeight}px; 
-                      margin-left: ${((layWidth - layBatWidth) / 2) - 5}px; 
-                      text-align: left; ${state == "offline" ? 'opacity: 0.3;' : ''}" 
-               class="small">
-            ${renderedStateIcons.join(" ")}
-          </div>
-
-          <!-- Online state icon -->
-          <div style="float: right; 
-                      margin-top: -${65 * layScaleHeight}px; 
-                      margin-right: ${((layWidth - layBatWidth) / 2) - 5}px; 
-                      text-align: right;" 
-               class="small">
-            ${renderedNetworkIcons.join(" ")}
-          </div>
-
-          ${batteryBarHtml}
+      <div class="graphic-container" style="width: ${layWidth}px; height: ${layHeight}px; margin-top: ${topOffset}px;">
+        <link href="https://cdn.materialdesignicons.com/7.4.47/css/materialdesignicons.min.css" rel="stylesheet" type="text/css"> 
+        
+        <!-- Layer 1: Background SOC -->
+        <div class="bg-soc ${charging ? 'charging-pulse' : ''}">${batteryBigNumber}</div>
+        
+        <!-- Layer 2: Spotlight Platform -->
+        <div class="car-platform"></div>
+        
+        <!-- Layer 3: Car Subject -->
+        <div class="car-subject" style="
+          background-image: url('${teslaImageUrl}'); 
+          background-size: contain;
+          background-repeat: no-repeat;
+          background-position: center;
+          width: ${100 * imageScale}%;
+          height: 100%;
+          opacity: ${imageOpacity};
+        "></div>
+        
+        <!-- Layer 4: Intelligence & Status Bar -->
+        <div style="position: absolute; bottom: 15px; display: flex; flex-direction: column; align-items: center; width: 100%;">
           ${renderIntelligence()}
-
-          <!-- Optional graphic mode icons below the car -->
-          <div style="text-align: center; 
-                      margin-top: ${this.config.displayOptions?.temperatureIcons?.topMargin ?? 0}px;
-                      ${temperatureIcons == "" ? 'display: none;' : ''}
-                      ${state == "offline" || state == "asleep" || state == "suspended" ? 'opacity: 0.3;' : ''}">
-            ${temperatureIcons}
+          <div class="modern-status-bar">
+            <div class="status-item">
+              <span class="bright">${tempDisplay}°${unitIsF ? 'F' : 'C'}</span>
+            </div>
+            
+            <div class="status-separator"></div>
+            
+            <div class="status-item">
+              <span class="mdi ${lockIcon}"></span>
+            </div>
+            
+            <div class="status-item ${sentry === 'true' ? 'sentry-active' : ''}">
+              <span class="mdi mdi-shield-eye"></span>
+            </div>
+            
+            <div class="status-item">
+              <span class="mdi ${connectionIcon}"></span>
+            </div>
           </div>
         </div>
       </div>
-		`;
+    `;
   },
+
 
   generateMapDom: function (wrapper, data) {
     console.log(this.name + ": generateMapDom called with data: ", data);
