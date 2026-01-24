@@ -127,6 +127,7 @@ Module.register("MMM-Tessie", {
     }
 
     this.sendSocketNotification('TESSIE_CONFIG', this.config);
+    this.configSentAt = Date.now();
   },
 
   openTessieConnection: function () {
@@ -198,6 +199,13 @@ Module.register("MMM-Tessie", {
     // Check if we have received any data yet (avoid falsey state values)
     const hasAnyData = Object.values(this.subscriptions || {}).some((entry) => entry && entry.time);
     if (!hasAnyData) {
+      const now = Date.now();
+      // Retry config if we never received data (e.g., helper missed config on refresh)
+      if (!this.configSentAt || (now - this.configSentAt) > 15000) {
+        console.log(this.name + ": No data yet; re-sending Tessie config");
+        this.sendSocketNotification('TESSIE_CONFIG', this.config);
+        this.configSentAt = now;
+      }
       const wrapper = document.createElement('div');
       wrapper.className = 'tessie-loading';
       wrapper.innerHTML = `
