@@ -487,8 +487,8 @@ Module.register("MMM-Tessie", {
           priority: 85,
           type: 'warning',
           icon: 'mdi-snowflake-alert',
-          text: `Cold outside (${Math.round(wx.outsideTempF)}°F)`,
-          subtext: 'Precondition battery before driving'
+          text: 'Precondition before driving',
+          subtext: `Cold outside (${Math.round(wx.outsideTempF)}°F)`
         });
       }
     }

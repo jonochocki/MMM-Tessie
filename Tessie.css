@@ -353,16 +353,13 @@
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  justify-content: flex-start;
+  gap: 0.6rem;
   width: 100%;
-  padding: 0.4rem 1.2rem;
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .modern-status-bar .status-group {
@@ -372,8 +369,26 @@
   min-width: 0;
 }
 
-.modern-status-bar .status-group--right {
-  justify-content: flex-end;
+/* Per-icon pill backgrounds (preserve mirror illusion) */
+.modern-status-bar .status-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  white-space: nowrap;
+}
+
+.modern-status-bar .status-item .mdi {
+  font-size: 1.15rem;
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .status-item.status-item--temp {
@@ -391,19 +406,9 @@
 }
 
 .status-item {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
   color: #fff;
   font-size: 0.95rem;
   font-weight: 500;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-  white-space: nowrap;
-}
-
-.status-item .mdi {
-  font-size: 1.15rem;
-  color: rgba(255, 255, 255, 0.95);
 }
 
 .status-item.sentry-active .mdi {
