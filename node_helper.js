@@ -46,10 +46,11 @@ module.exports = NodeHelper.create({
     },
 
     socketNotificationReceived: function (notification, payload) {
-        console.log(this.name + ': Socket notification received: ', notification, ': ', payload);
+        console.log(this.name + ': Socket notification received: ', notification);
         var self = this;
         if (notification === 'TESSIE_CONFIG') {
             var configT = payload;
+            console.log(this.name + ': Setting config and starting client');
             self.startTessieClient(configT);
             self.loaded = true;
         }
@@ -58,6 +59,7 @@ module.exports = NodeHelper.create({
     // === Tessie support ===
     startTessieClient: function (config) {
         var self = this;
+        console.log(self.name + ': startTessieClient called');
         if (!config || !config.tessie || !config.tessie.accessToken || !config.tessie.vin) {
             console.log(self.name + ': Tessie config invalid; requires tessie.accessToken and tessie.vin');
             return;
@@ -67,6 +69,7 @@ module.exports = NodeHelper.create({
             vin: config.tessie.vin,
             periodMs: (config.updatePeriod ? config.updatePeriod : 5) * 1000
         };
+        console.log(self.name + ': Configured Tessie with VIN: ' + self.tessieConfig.vin + ' and period: ' + self.tessieConfig.periodMs + 'ms');
         self.mapOptions = {
             enabled: (config.displayMode === 'map') || (config.displayMode === 'radial') || (config.mapOptions && config.mapOptions.enabled === true),
             width: (config.mapOptions && config.mapOptions.width) ? config.mapOptions.width : 200,
@@ -82,7 +85,9 @@ module.exports = NodeHelper.create({
             errorBackoffMs: (config.pollingCadence && config.pollingCadence.errorBackoffMs) ? config.pollingCadence.errorBackoffMs : 60000,
             locationEvery: (config.pollingCadence && config.pollingCadence.locationEvery) ? config.pollingCadence.locationEvery : 6
         };
+        console.log(self.name + ': Poll config: ', JSON.stringify(self.pollConfig));
         if (self.tessieTimer) {
+            console.log(self.name + ': Clearing existing timer');
             clearInterval(self.tessieTimer);
             self.tessieTimer = null;
         }
@@ -97,17 +102,27 @@ module.exports = NodeHelper.create({
     pollTessie: function () {
         var self = this;
         var cfg = self.tessieConfig;
-        if (!cfg) return;
+        if (!cfg) {
+            console.log(self.name + ': No Tessie config, skipping poll');
+            return;
+        }
 
         self.pollCounter = (self.pollCounter + 1) % 1000000;
+        console.log(self.name + ': Starting poll #' + self.pollCounter);
 
         // Prefer the state endpoint for full nested vehicle state
         var url = 'https://api.tessie.com/' + encodeURIComponent(cfg.vin) + '/state?use_cache=true';
+        console.log(self.name + ': Fetching ' + url);
 
         axios.get(url, { headers: { 'Authorization': 'Bearer ' + cfg.token } })
             .then(function (response) {
                 var st = response.data;
-                if (!st) return null;
+                console.log(self.name + ': Received response from Tessie API');
+                if (!st) {
+                    console.log(self.name + ': Empty response from Tessie API');
+                    return null;
+                }
+                console.log(self.name + ': Vehicle state: ' + st.state);
 
                 // Optimization: Check if we need to fetch location
                 var includeLocation = false;
@@ -116,16 +131,23 @@ module.exports = NodeHelper.create({
                 var lon = drive.longitude;
 
                 // Always fetch if we have no location history
-                if (!self.lastLocation) includeLocation = true;
-                else {
+                if (!self.lastLocation) {
+                    console.log(self.name + ': No last location, including location fetch');
+                    includeLocation = true;
+                } else {
                     // Calculate distance
                     var dist = self.getDistanceFromLatLonInKm(self.lastLocation.lat, self.lastLocation.lon, lat, lon);
+                    console.log(self.name + ': Distance moved: ' + dist.toFixed(4) + ' km');
                     // Fetch if moved > 0.1km
-                    if (dist > 0.1) includeLocation = true;
+                    if (dist > 0.1) {
+                        console.log(self.name + ': Moved > 0.1km, including location fetch');
+                        includeLocation = true;
+                    }
                 }
 
                 // Also respect the periodic forced refresh (fallback)
                 if ((self.pollCounter % self.pollConfig.locationEvery) === 0) {
+                    console.log(self.name + ': Periodic location refresh including location fetch');
                     includeLocation = true;
                 }
 
@@ -134,17 +156,27 @@ module.exports = NodeHelper.create({
                 }
 
                 if (!includeLocation) {
+                    console.log(self.name + ': Skipping explicit location fetch');
                     return { state: st, location: null };
                 }
 
+                console.log(self.name + ': Fetching explicit location');
                 return axios.get('https://api.tessie.com/' + encodeURIComponent(cfg.vin) + '/location', { headers: { 'Authorization': 'Bearer ' + cfg.token } })
                     .then(function (locRes) {
+                        console.log(self.name + ': Received location response');
                         return { state: st, location: locRes.data };
                     })
-                    .catch(function () { return { state: st, location: null }; });
+                    .catch(function (err) {
+                        console.log(self.name + ': Error fetching location: ' + err.message);
+                        return { state: st, location: null };
+                    });
             })
             .then(function (bundle) {
-                if (!bundle) return;
+                if (!bundle) {
+                    console.log(self.name + ': No bundle to process');
+                    return;
+                }
+                console.log(self.name + ': Mapping data');
                 var mapped = TessieMapper.mapTessieToModuleFields(bundle.state, bundle.location);
 
                 // Preserve last known geofence if location not fetched or empty
@@ -154,6 +186,7 @@ module.exports = NodeHelper.create({
 
                 var afterMap = Promise.resolve(mapped);
                 if (self.mapOptions && self.mapOptions.enabled) {
+                    console.log(self.name + ': Map enabled, fetching map image');
                     var mo = self.mapOptions;
                     var mapPath = 'https://api.tessie.com/' + encodeURIComponent(cfg.vin) + '/map?width=' + encodeURIComponent(mo.width) + '&height=' + encodeURIComponent(mo.height) + '&zoom=' + encodeURIComponent(mo.zoom) + '&marker_size=' + encodeURIComponent(mo.marker_size) + '&style=' + encodeURIComponent(mo.style);
 
@@ -162,21 +195,39 @@ module.exports = NodeHelper.create({
                         responseType: 'arraybuffer'
                     })
                         .then(function (res) {
+                            console.log(self.name + ': Received map image');
                             try {
                                 var b64 = Buffer.from(res.data, 'binary').toString('base64');
                                 mapped.map_image = 'data:image/png;base64,' + b64;
-                            } catch (e) { }
+                            } catch (e) {
+                                console.log(self.name + ': Error encoding map image: ' + e.message);
+                            }
                             return mapped;
                         })
-                        .catch(function () { return mapped; });
+                        .catch(function (err) {
+                            console.log(self.name + ': Error fetching map: ' + err.message);
+                            return mapped;
+                        });
                 }
 
                 afterMap.then(function (finalMapped) {
                     var shouldSend = false;
                     try {
-                        if (!self.lastMappedValues) shouldSend = true;
-                        else shouldSend = (JSON.stringify(self.lastMappedValues) !== JSON.stringify(finalMapped));
+                        if (!self.lastMappedValues) {
+                            console.log(self.name + ': First data received');
+                            shouldSend = true;
+                        } else {
+                            var oldStr = JSON.stringify(self.lastMappedValues);
+                            var newStr = JSON.stringify(finalMapped);
+                            shouldSend = (oldStr !== newStr);
+                            if (!shouldSend) {
+                                console.log(self.name + ': Data hasn\'t changed, skipping notification');
+                            } else {
+                                console.log(self.name + ': Data changed, sending notification');
+                            }
+                        }
                     } catch (e) {
+                        console.log(self.name + ': Error comparing data: ' + e.message);
                         shouldSend = true;
                     }
                     if (shouldSend) {
@@ -196,14 +247,20 @@ module.exports = NodeHelper.create({
                     // jitter +/-10%
                     var jitter = (Math.random() * 0.2) - 0.1;
                     nextMs = Math.max(1000, Math.floor(nextMs * (1 + jitter)));
+                    console.log(self.name + ': Next poll in ' + (nextMs / 1000).toFixed(1) + 's');
                     self.scheduleNextPoll(nextMs);
                     self.tessieBackoffMs = null;
                 });
             })
             .catch(function (err) {
                 console.log(self.name + ': Tessie poll error: ', err.message);
+                if (err.response) {
+                    console.log(self.name + ': Response data: ', JSON.stringify(err.response.data));
+                    console.log(self.name + ': Status code: ', err.response.status);
+                }
                 var base = (self.pollConfig && self.pollConfig.errorBackoffMs) ? self.pollConfig.errorBackoffMs : 60000;
                 self.tessieBackoffMs = self.tessieBackoffMs ? Math.min(self.tessieBackoffMs * 2, base * 10) : base;
+                console.log(self.name + ': Retrying in ' + (self.tessieBackoffMs / 1000).toFixed(1) + 's (backoff)');
                 self.scheduleNextPoll(self.tessieBackoffMs);
             });
     },

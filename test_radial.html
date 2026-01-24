@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>MMM-Tessie Radial Test</title>
+    <link rel="stylesheet" href="Tessie.css">
+    <link href="https://cdn.materialdesignicons.com/4.8.95/css/materialdesignicons.min.css" rel="stylesheet"
+        type="text/css">
+    <style>
+        body {
+            background: #000;
+            color: #fff;
+            font-family: "Roboto", sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        #module-wrapper {
+            border: 1px dashed #333;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="module-wrapper"></div>
+
+    <script>
+        // Mock Module Context
+        const Module = {
+            name: "MMM-Tessie",
+            config: {
+                imperial: true,
+                rangeDisplay: "mi", // or "%"
+                mapOptions: {
+                    width: 300,
+                    height: 300
+                },
+                radialOptions: {
+                    // Options if any
+                }
+            },
+            subscriptions: {
+                map_image: { value: "https://maps.googleapis.com/maps/api/staticmap?center=37.7749,-122.4194&zoom=13&size=300x300&maptype=roadmap&key=YOUR_API_KEY" }
+            },
+
+            // Copied generateRadialDom function (Updated for Corner Gauges)
+            generateRadialDom: function (wrapper, data) {
+                console.log(this.name + ": generateRadialDom called with data: ", data);
+
+                const {
+                    state, battery, batteryUsable, chargeLimitSOC, pluggedIn, locked, sentry, windowsOpen, doorsOpen, trunkOpen, frunkOpen,
+                    isUserPresent, isClimateOn, isPreconditioning, isHealthy, isUpdateAvailable, idealRange, inside_temp, outside_temp,
+                    charging, timeToFull, chargeStart
+                } = data;
+
+                const side = Math.min(this.config.mapOptions?.width ?? 300, this.config.mapOptions?.height ?? 300);
+                const mapSize = Math.round(side * 0.7); // Increased to 70%
+                const center = side / 2;
+                const radius = (side / 2) - 10; // Padding
+
+                // Use a placeholder if map image is broken/missing in test
+                const mapImg = "https://upload.wikimedia.org/wikipedia/commons/thumb/4/41/San_Francisco_Bay_Area_location_map.svg/1200px-San_Francisco_Bay_Area_location_map.svg.png";
+
+                const formatRemainingShort = function (remHrs) {
+                    if (!remHrs || remHrs <= 0) return '';
+                    const totalMins = Math.max(0, Math.round(remHrs * 60));
+                    const hrs = Math.floor(totalMins / 60);
+                    const mins = totalMins % 60;
+                    const hPart = hrs > 0 ? (hrs + "h ") : '';
+                    return hPart + mins + "m";
+                };
+
+                // SVG Arc Helper
+                const polarToCartesian = (centerX, centerY, radius, angleInDegrees) => {
+                    const angleInRadians = (angleInDegrees - 90) * Math.PI / 180.0;
+                    return {
+                        x: centerX + (radius * Math.cos(angleInRadians)),
+                        y: centerY + (radius * Math.sin(angleInRadians))
+                    };
+                }
+
+                const describeArc = (x, y, radius, startAngle, endAngle) => {
+                    const start = polarToCartesian(x, y, radius, endAngle);
+                    const end = polarToCartesian(x, y, radius, startAngle);
+                    const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+                    const d = [
+                        "M", start.x, start.y,
+                        "A", radius, radius, 0, largeArcFlag, 0, end.x, end.y
+                    ].join(" ");
+                    return d;
+                }
+
+                // Corner Gauge Renderer (NO ICONS)
+                const renderCornerGauge = (position, value, max, text, subtext, colorClass, limitValue) => {
+                    let startAngle, endAngle, centerAngle;
+                    const arcLen = 60;
+
+                    switch (position) {
+                        case 'top-left': startAngle = 285; endAngle = 345; centerAngle = 315; break;
+                        case 'top-right': startAngle = 15; endAngle = 75; centerAngle = 45; break;
+                        case 'bottom-right': startAngle = 105; endAngle = 165; centerAngle = 135; break;
+                        case 'bottom-left': startAngle = 195; endAngle = 255; centerAngle = 225; break;
+                    }
+
+                    const valClamped = Math.min(Math.max(value, 0), max);
+                    const pct = valClamped / max;
+                    const valAngleSpan = arcLen * pct;
+
+                    let valStart, valEnd;
+                    valStart = startAngle;
+                    valEnd = startAngle + valAngleSpan;
+
+                    const strokeWidth = 10;
+                    const trackPath = describeArc(center, center, radius, startAngle, endAngle);
+                    const valPath = describeArc(center, center, radius, valStart, valEnd);
+
+                    // Position text on OUTSIDE of arc
+                    const textRadius = radius + 35;
+                    const textAngle = centerAngle;
+                    const textPos = polarToCartesian(center, center, textRadius, textAngle);
+
+                    // Rotation angles
+                    let textRotation;
+
+                    switch (position) {
+                        case 'top-left':
+                            textRotation = -45;
+                            break;
+                        case 'top-right':
+                            textRotation = 45;
+                            break;
+                        case 'bottom-right':
+                            textRotation = -45;
+                            break;
+                        case 'bottom-left':
+                            textRotation = 45;
+                            break;
+                    }
+
+                    // Limit marker for battery gauge
+                    let limitMarker = '';
+                    if (limitValue && limitValue > 0 && limitValue < 100) {
+                        const limitPct = limitValue / max;
+                        const limitAngleSpan = arcLen * limitPct;
+                        const limitAngle = startAngle + limitAngleSpan;
+                        const limitPos = polarToCartesian(center, center, radius, limitAngle);
+
+                        limitMarker = `
+                      <circle cx="${limitPos.x}" cy="${limitPos.y}" r="4" fill="rgba(255,255,255,0.7)" stroke="rgba(0,0,0,0.9)" stroke-width="1.5"/>
+                    `;
+                    }
+
+                    return `
+                    <g class="corner-gauge ${position}">
+                        <!-- Track -->
+                        <path d="${trackPath}" class="gauge-bg" stroke-width="${strokeWidth}" fill="none" stroke-linecap="round"/>
+                        <!-- Value -->
+                        <path d="${valPath}" class="gauge-fg ${colorClass}" stroke-width="${strokeWidth}" fill="none" stroke-linecap="round"/>
+                        ${limitMarker}
+                        
+                        <!-- Text (outside, rotated) -->
+                        <g transform="translate(${textPos.x}, ${textPos.y}) rotate(${textRotation})">
+                            <foreignObject x="-35" y="-25" width="70" height="50">
+                                <div class="corner-content" style="width: 70px; height: 50px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+                                    <span class="bright" style="font-size: 18px; font-weight: 700; line-height: 1; text-shadow: 0 1px 3px rgba(0,0,0,0.8);">${text}</span>
+                                    ${subtext ? `<span class="dim" style="font-size: 9px; text-transform: uppercase; margin-top: 2px; opacity: 0.7;">${subtext}</span>` : ''}
+                                </div>
+                            </foreignObject>
+                        </g>
+                    </g>
+                `;
+                };
+
+                // Data preparation
+                const isF = this.config.imperial;
+                const tempMax = isF ? 120 : 50;
+                const rangeMax = isF ? 350 : 560;
+
+                // TL: Battery (with charge limit marker) - NO ICON
+                const tl = renderCornerGauge('top-left', batteryUsable, 100, `${Math.round(batteryUsable)}%`, null, batteryUsable < 20 ? 'red' : 'green', chargeLimitSOC);
+
+                // TR: Inside Temp - NO ICON
+                const tr = renderCornerGauge('top-right', inside_temp, tempMax, `${Math.round(inside_temp)}°`, 'Inside', 'orange');
+
+                // BL: Range - NO ICON
+                const bl = renderCornerGauge('bottom-left', idealRange, rangeMax, `${Math.round(idealRange)}`, isF ? 'mi' : 'km', 'blue');
+
+                // BR: Outside Temp or Charging - NO ICON
+                let br;
+                if (charging) {
+                    const timeStr = formatRemainingShort(timeToFull);
+                    br = renderCornerGauge('bottom-right', 100, 100, 'Charging', timeStr, 'green');
+                } else {
+                    br = renderCornerGauge('bottom-right', outside_temp, tempMax, `${Math.round(outside_temp)}°`, 'Outside', 'blue');
+                }
+
+                wrapper.innerHTML = `
+            <div class="radial-mode" style="width:${side}px; height:${side}px; position: relative;">
+                
+                <!-- Center Map -->
+                <div class="map-container" style="
+                    width:${mapSize}px; height:${mapSize}px; 
+                    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                    border-radius: 50%; overflow: hidden; 
+                    border: 3px solid rgba(255,255,255,0.15);
+                    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+                    z-index: 10;
+                ">
+                    ${mapImg ? `<img src="${mapImg}" style="width:100%; height:100%; object-fit: cover;"/>` : `<div style="width:100%; height:100%; background: #222; display:flex; align-items:center; justify-content:center;"><span class="mdi mdi-map-marker-off" style="font-size: 30px; opacity: 0.5;"></span></div>`}
+                </div>
+                
+                <!-- SVG Layer for Gauges -->
+                <svg width="${side}" height="${side}" style="position: absolute; top: 0; left: 0; z-index: 5; overflow: visible;">
+                    ${tl}
+                    ${tr}
+                    ${bl}
+                    ${br}
+                </svg>
+                
+            </div>`;
+            }
+        };
+
+        // Mock Data
+        const mockData = {
+            state: 'parked',
+            battery: 78,
+            batteryUsable: 78,
+            chargeLimitSOC: 80,
+            pluggedIn: false,
+            locked: true,
+            sentry: true,
+            windowsOpen: false,
+            doorsOpen: false,
+            trunkOpen: false,
+            frunkOpen: false,
+            isUserPresent: false,
+            isClimateOn: false,
+            isPreconditioning: false,
+            isHealthy: true,
+            isUpdateAvailable: false,
+            idealRange: 245,
+            inside_temp: 72, // F
+            outside_temp: 68, // F
+            charging: false,
+            timeToFull: 0,
+            chargeStart: null
+        };
+
+        // Render
+        const wrapper = document.getElementById('module-wrapper');
+        Module.generateRadialDom(wrapper, mockData);
+
+    </script>
+
+</body>
+
+</html>
