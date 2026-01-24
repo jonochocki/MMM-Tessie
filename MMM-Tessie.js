@@ -287,11 +287,13 @@ Module.register("MMM-Tessie", {
 
     // Update intelligence decision state before rendering
     this.updateIntelligenceDecision(data);
-    if ((this.config.displayMode && this.config.displayMode.toLowerCase() === 'map') || (this.config.mapOptions && this.config.mapOptions.enabled)) {
+    const mode = (this.config.displayMode || 'graphic').toLowerCase();
+
+    if (mode === 'map') {
       this.generateMapDom(wrapper, data);
-    } else if (this.config.displayMode && this.config.displayMode.toLowerCase() === 'radial') {
+    } else if (mode === 'radial') {
       this.generateRadialDom(wrapper, data);
-    } else if (this.config.displayMode && this.config.displayMode.toLowerCase() === 'smart') {
+    } else if (mode === 'smart') {
       this.generateSmartDom(wrapper, data);
     } else {
       this.generateGraphicDom(wrapper, data);
@@ -518,8 +520,8 @@ Module.register("MMM-Tessie", {
     } = data;
 
     // Sizing from config
-    const layWidth = this.config.sizeOptions?.width ?? 450;
-    const layHeight = this.config.sizeOptions?.height ?? 300; // Increased default height for better depth
+    const layWidth = this.config.sizeOptions?.width ?? 400; // Reduced default from 450
+    const layHeight = this.config.sizeOptions?.height ?? 280; // Reduced default from 300
     const topOffset = this.config.sizeOptions?.topOffset ?? 0;
 
     // Image compositor setup
@@ -583,8 +585,8 @@ Module.register("MMM-Tessie", {
           background-size: contain;
           background-repeat: no-repeat;
           background-position: center;
-          width: ${90 * imageScale}%; /* Reduced default scale */
-          height: 80%; /* Reduced height to keep it from dominating */
+          width: ${80 * imageScale}%; /* Reduced default scale from 90% */
+          height: 70%; /* Reduced height from 80% to reveal more SOC */
           opacity: ${imageOpacity};
         "></div>
         

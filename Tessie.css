@@ -226,31 +226,33 @@
   align-items: center;
   justify-content: center;
   overflow: visible;
+  margin: 0;
+  padding: 0;
 }
 
 .bg-soc {
   position: absolute;
-  top: 40%; /* Lifted higher from 50% */
+  top: 30%; /* Lifted even higher from 40% */
   left: 50%;
   transform: translate(-50%, -50%);
-  font-size: 160px; /* Slightly smaller to fit better when lifted */
+  font-size: 170px; /* Slightly larger since it's higher up */
   font-weight: 200;
-  color: rgba(255, 255, 255, 0.18); /* Brightened from 0.08 */
+  color: rgba(255, 255, 255, 0.25); /* Brightened significantly from 0.18 */
   line-height: 1;
   z-index: 1;
   pointer-events: none;
   font-family: "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-  letter-spacing: -5px;
+  letter-spacing: -8px;
 }
 
 .car-platform {
   position: absolute;
-  top: 75%; /* Lowered from 70% */
+  top: 80%; /* Lowered from 75% */
   left: 50%;
   transform: translate(-50%, -50%);
   width: 140%;
-  height: 40%;
-  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+  height: 30%;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.12) 0%, transparent 70%);
   z-index: 2;
   pointer-events: none;
 }
@@ -258,11 +260,11 @@
 .car-subject {
   position: relative;
   z-index: 3;
-  width: 90%; /* Reduced from 100% to reduce dominance */
+  width: 80%; /* Reduced from 90% to reveal more SOC */
   height: auto;
-  margin-top: 20px; /* Push down to clear the SOC text */
+  margin-top: 50px; /* Increased push down to clear the SOC text */
   transition: all 0.5s ease;
-  filter: drop-shadow(0 10px 20px rgba(0,0,0,0.5));
+  filter: drop-shadow(0 15px 30px rgba(0,0,0,0.6));
 }
 
 .modern-status-bar {
@@ -271,9 +273,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 15px;
+  gap: 12px; /* Reduced gap from 15px */
   margin-top: 0px;
-  padding: 10px 25px;
+  padding: 6px 18px; /* Reduced padding from 10px 25px */
   background: rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -284,12 +286,12 @@
 
 .map-preview-container {
   position: absolute;
-  bottom: 20px;
-  right: 20px;
-  width: 110px;
-  height: 110px;
+  bottom: 10px; /* Tighter position */
+  right: 10px;
+  width: 90px; /* Scaled down slightly */
+  height: 90px;
   z-index: 4;
-  border-radius: 20px;
+  border-radius: 16px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: 0 4px 15px rgba(0,0,0,0.5);
@@ -307,15 +309,15 @@
 .status-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   color: #fff;
-  font-size: 1.2rem;
+  font-size: 1rem; /* Reduced from 1.2rem */
   font-weight: 500;
   text-shadow: 0 2px 4px rgba(0,0,0,0.3);
 }
 
 .status-item .mdi {
-  font-size: 1.4rem;
+  font-size: 1.2rem; /* Reduced from 1.4rem */
   color: rgba(255, 255, 255, 0.95);
 }
 
@@ -326,16 +328,16 @@
 
 .status-separator {
   width: 1px;
-  height: 20px;
+  height: 16px; /* Reduced */
   background: rgba(255, 255, 255, 0.2);
 }
 
 .bg-soc.charging-pulse {
   animation: bgPulse 2s ease-in-out infinite;
-  color: rgba(48, 209, 88, 0.25); /* Brightened green tint */
+  color: rgba(48, 209, 88, 0.3); /* Brightened green tint */
 }
 
 @keyframes bgPulse {
-  0%, 100% { opacity: 0.15; transform: translate(-50%, -50%) scale(1); }
-  50% { opacity: 0.3; transform: translate(-50%, -50%) scale(1.05); }
+  0%, 100% { opacity: 0.2; transform: translate(-50%, -50%) scale(1); }
+  50% { opacity: 0.4; transform: translate(-50%, -50%) scale(1.05); }
 }
