@@ -224,6 +224,9 @@
   width: 100%;
   margin: 0 auto;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
 }
 
 .graphic-content {
@@ -233,17 +236,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding-bottom: 3.5rem;
+  padding: 0 0.5rem;
   box-sizing: border-box;
 }
 
 .graphic-left {
   position: relative;
   flex: 1 1 55%;
-  min-height: 160px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  min-height: 12rem;
 }
 
 .graphic-right {
@@ -261,7 +261,7 @@
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 7rem;
+  font-size: 6.5rem;
   font-weight: 200;
   color: rgba(255, 255, 255, 0.2);
   line-height: 1;
@@ -283,7 +283,7 @@
   bottom: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 100%;
+  width: 112%;
   min-height: 100px;
   aspect-ratio: 16 / 9;
   background-size: contain;
@@ -320,10 +320,8 @@
 }
 
 .status-wrapper {
-  position: absolute;
-  bottom: 5%;
-  left: 0;
-  right: 0;
+  position: relative;
+  margin-top: 0.75rem;
   display: flex;
   flex-direction: column;
   align-items: center;
