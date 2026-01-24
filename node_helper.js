@@ -48,7 +48,7 @@ module.exports = NodeHelper.create({
     socketNotificationReceived: function (notification, payload) {
         console.log(this.name + ': Socket notification received: ', notification);
         var self = this;
-        if (notification === 'TESSIE_CONFIG') {
+        if (notification === 'TESSIE_CONFIG' || notification === 'INIT_TESSIE_CLIENT') {
             var configT = payload;
             console.log(this.name + ': Setting config and starting client');
             self.startTessieClient(configT);
@@ -88,7 +88,7 @@ module.exports = NodeHelper.create({
         console.log(self.name + ': Poll config: ', JSON.stringify(self.pollConfig));
         if (self.tessieTimer) {
             console.log(self.name + ': Clearing existing timer');
-            clearInterval(self.tessieTimer);
+            clearTimeout(self.tessieTimer);
             self.tessieTimer = null;
         }
         // Initial poll then dynamically scheduled polls
@@ -114,7 +114,7 @@ module.exports = NodeHelper.create({
         var url = 'https://api.tessie.com/' + encodeURIComponent(cfg.vin) + '/state?use_cache=true';
         console.log(self.name + ': Fetching ' + url);
 
-        axios.get(url, { headers: { 'Authorization': 'Bearer ' + cfg.token } })
+        axios.get(url, { headers: { 'Authorization': 'Bearer ' + cfg.token }, timeout: 15000 })
             .then(function (response) {
                 var st = response.data;
                 console.log(self.name + ': Received response from Tessie API');
@@ -161,7 +161,7 @@ module.exports = NodeHelper.create({
                 }
 
                 console.log(self.name + ': Fetching explicit location');
-                return axios.get('https://api.tessie.com/' + encodeURIComponent(cfg.vin) + '/location', { headers: { 'Authorization': 'Bearer ' + cfg.token } })
+                return axios.get('https://api.tessie.com/' + encodeURIComponent(cfg.vin) + '/location', { headers: { 'Authorization': 'Bearer ' + cfg.token }, timeout: 15000 })
                     .then(function (locRes) {
                         console.log(self.name + ': Received location response');
                         return { state: st, location: locRes.data };
@@ -192,7 +192,8 @@ module.exports = NodeHelper.create({
 
                     afterMap = axios.get(mapPath, {
                         headers: { 'Authorization': 'Bearer ' + cfg.token },
-                        responseType: 'arraybuffer'
+                        responseType: 'arraybuffer',
+                        timeout: 15000
                     })
                         .then(function (res) {
                             console.log(self.name + ': Received map image');
@@ -210,7 +211,7 @@ module.exports = NodeHelper.create({
                         });
                 }
 
-                afterMap.then(function (finalMapped) {
+                return afterMap.then(function (finalMapped) {
                     var shouldSend = false;
                     try {
                         if (!self.lastMappedValues) {

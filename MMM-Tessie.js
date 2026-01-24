@@ -126,7 +126,7 @@ Module.register("MMM-Tessie", {
       return;
     }
 
-    this.sendSocketNotification('INIT_TESSIE_CLIENT', this.config);
+    this.sendSocketNotification('TESSIE_CONFIG', this.config);
   },
 
   openTessieConnection: function () {
