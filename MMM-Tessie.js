@@ -585,8 +585,8 @@ Module.register("MMM-Tessie", {
           background-size: contain;
           background-repeat: no-repeat;
           background-position: center;
-          width: ${80 * imageScale}%; /* Reduced default scale from 90% */
-          height: 70%; /* Reduced height from 80% to reveal more SOC */
+          width: ${75 * imageScale}%; /* Reduced default scale from 80% */
+          height: 65%; /* Reduced height from 70% to reveal more SOC */
           opacity: ${imageOpacity};
         "></div>
         
