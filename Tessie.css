@@ -221,12 +221,10 @@
 /* Graphic Redesign - Depth UI - Two Column Layout */
 .graphic-container {
   position: relative;
-  width: 100%;
+  width: 450px;
+  max-width: 100%;
   margin: 0 auto;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
 }
 
 .graphic-content {
@@ -236,14 +234,17 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0 0.5rem;
+  padding: 0 1rem 3.5rem;
   box-sizing: border-box;
 }
 
 .graphic-left {
   position: relative;
   flex: 1 1 55%;
-  min-height: 12rem;
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .graphic-right {
@@ -320,8 +321,10 @@
 }
 
 .status-wrapper {
-  position: relative;
-  margin-top: 0.75rem;
+  position: absolute;
+  bottom: 5%;
+  left: 0;
+  right: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
