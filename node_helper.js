@@ -51,6 +51,13 @@ module.exports = NodeHelper.create({
         if (notification === 'TESSIE_CONFIG' || notification === 'INIT_TESSIE_CLIENT') {
             var configT = payload;
             console.log(this.name + ': Setting config and starting client');
+            
+            // Always send cached data immediately on config (frontend may have refreshed)
+            if (self.lastMappedValues) {
+                console.log(this.name + ': Sending cached data to fresh frontend');
+                self.sendSocketNotification('TESSIE_STATE', { values: self.lastMappedValues });
+            }
+            
             self.startTessieClient(configT);
             self.loaded = true;
         }
